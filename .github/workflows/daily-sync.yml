@@ -1,4 +1,4 @@
-name: Daily VMI Data Sync and Deploy
+name: Daily Harvard Data Sync and Deploy
 
 on:
   schedule:
@@ -8,6 +8,8 @@ on:
 jobs:
   sync-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # allow git push
     
     steps:
     - name: Checkout repository
