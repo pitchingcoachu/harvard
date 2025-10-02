@@ -1621,7 +1621,8 @@ need_cols <- c(
   "PitchCall","KorBB","Balls","Strikes","SessionType",
   "ExitSpeed","Angle","BatterSide",
   "PlayResult","TaggedHitType","OutsOnPlay",
-  "Batter", "Catcher"   # ← add this
+  "Batter", "Catcher",
+  "BatterEmail", "CatcherEmail"
 )
 
 
@@ -1682,18 +1683,68 @@ message("Loaded ", nrow(pitch_data), " rows from ", length(all_csvs),
         " | root: ", data_parent)
 
 
-# Read lookup table and keep Email in a separate column to avoid .x/.y
-lookup_table <- if (file.exists("lookup_table.csv")) {
-  read.csv("lookup_table.csv", stringsAsFactors = FALSE) %>%
-    dplyr::rename(Pitcher = PlayerName, Email_lookup = Email)
-} else {
-  data.frame(Pitcher = character(), Email_lookup = character(), stringsAsFactors = FALSE)
+normalize_email <- function(x) {
+  out <- trimws(tolower(as.character(x)))
+  out[out == ""] <- NA_character_
+  out
 }
 
-# Join, then coalesce into a single Email column
-pitch_data <- dplyr::left_join(pitch_data, lookup_table, by = "Pitcher") %>%
-  dplyr::mutate(Email = dplyr::coalesce(Email, Email_lookup)) %>%
-  dplyr::select(-Email_lookup)
+
+# Read lookup table and normalize columns for use across pitching/hitting/catching roles
+lookup_table <- if (file.exists("lookup_table.csv")) {
+  lt <- tryCatch(
+    read.csv("lookup_table.csv", stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM"),
+    error = function(e) read.csv("lookup_table.csv", stringsAsFactors = FALSE, check.names = FALSE)
+  )
+  nm_raw <- colnames(lt)
+  nm_stripped <- tolower(gsub("[^[:alpha:]]", "", nm_raw))
+  name_idx  <- match("playername", nm_stripped)
+  email_idx <- match("email",      nm_stripped)
+  if (is.na(name_idx)) {
+    data.frame(PlayerName = character(), Email = character(), stringsAsFactors = FALSE)
+  } else {
+    out <- lt[, unique(na.omit(c(name_idx, email_idx))), drop = FALSE]
+    colnames(out)[match(name_idx, unique(na.omit(c(name_idx, email_idx))))] <- "PlayerName"
+    if (!is.na(email_idx)) {
+      colnames(out)[match(email_idx, unique(na.omit(c(name_idx, email_idx))))] <- "Email"
+    } else if (!"Email" %in% colnames(out)) {
+      out$Email <- NA_character_
+    }
+    out %>%
+      dplyr::mutate(
+        PlayerName = trimws(as.character(PlayerName)),
+        Email = normalize_email(Email)
+      ) %>%
+      dplyr::filter(!is.na(PlayerName) & nzchar(PlayerName))
+  }
+} else {
+  data.frame(PlayerName = character(), Email = character(), stringsAsFactors = FALSE)
+}
+
+lookup_pitcher <- lookup_table %>%
+  dplyr::rename(Pitcher = PlayerName, PitcherEmail_lookup = Email)
+
+lookup_batter <- lookup_table %>%
+  dplyr::rename(Batter = PlayerName, BatterEmail_lookup = Email)
+
+lookup_catcher <- lookup_table %>%
+  dplyr::rename(Catcher = PlayerName, CatcherEmail_lookup = Email)
+
+# Join, coalesce, and retain role-specific email columns for downstream privacy filters
+if (!"BatterEmail" %in% names(pitch_data)) pitch_data$BatterEmail <- NA_character_
+if (!"CatcherEmail" %in% names(pitch_data)) pitch_data$CatcherEmail <- NA_character_
+
+pitch_data <- pitch_data %>%
+  dplyr::left_join(lookup_pitcher, by = "Pitcher") %>%
+  dplyr::left_join(lookup_batter, by = "Batter") %>%
+  dplyr::left_join(lookup_catcher, by = "Catcher") %>%
+  dplyr::mutate(
+    Email = normalize_email(dplyr::coalesce(Email, PitcherEmail_lookup)),
+    PitcherEmail = Email,
+    BatterEmail = normalize_email(dplyr::coalesce(BatterEmail, BatterEmail_lookup)),
+    CatcherEmail = normalize_email(dplyr::coalesce(CatcherEmail, CatcherEmail_lookup))
+  ) %>%
+  dplyr::select(-PitcherEmail_lookup, -BatterEmail_lookup, -CatcherEmail_lookup)
 
 
 # (keep your name_map construction the same)
@@ -1720,12 +1771,6 @@ catch_display <- ifelse(
   raw_catchers
 )
 catcher_map <- setNames(raw_catchers, catch_display)
-
-normalize_email <- function(x) {
-  out <- trimws(tolower(as.character(x)))
-  out[out == ""] <- NA_character_
-  out
-}
 
 ADMIN_EMAILS <- c(
   "jgaynor@pitchingcoachu.com",
@@ -1786,7 +1831,9 @@ ALLOWED_PITCHERS <- c(
 norm_name_ci <- function(x) gsub("[^a-z]", "", tolower(trimws(as.character(x))))
 
 # Restrict a data frame to the logged-in user's rows (unless admin)
-scope_to_user_data <- function(df, email_col = "Email", empty_when_missing = TRUE) {
+scope_to_user_data <- function(df,
+                              email_col = c("Email", "PitcherEmail", "BatterEmail", "CatcherEmail"),
+                              empty_when_missing = TRUE) {
   if (is.null(df)) return(df)
 
   admin_fun <- get0("is_admin", mode = "function", inherits = TRUE)
@@ -1804,7 +1851,13 @@ scope_to_user_data <- function(df, email_col = "Email", empty_when_missing = TRU
     return(df[0, , drop = FALSE])
   }
 
-  if (!(email_col %in% names(df))) {
+  email_cols <- unique(email_col)
+  if (!length(email_cols)) {
+    return(if (isTRUE(empty_when_missing)) df[0, , drop = FALSE] else df)
+  }
+
+  available_cols <- email_cols[email_cols %in% names(df)]
+  if (!length(available_cols)) {
     return(if (isTRUE(empty_when_missing)) df[0, , drop = FALSE] else df)
   }
 
@@ -1819,8 +1872,13 @@ scope_to_user_data <- function(df, email_col = "Email", empty_when_missing = TRU
   target <- normalize_email_value(user_email_val)[1]
   if (is.na(target) || !nzchar(target)) return(df[0, , drop = FALSE])
 
-  emails <- normalize_email_value(df[[email_col]])
-  keep <- !is.na(emails) & emails == target
+  keep <- rep(FALSE, nrow(df))
+  for (col in available_cols) {
+    emails <- normalize_email_value(df[[col]])
+    keep <- keep | (!is.na(emails) & emails == target)
+  }
+
+  if (!any(keep)) return(df[0, , drop = FALSE])
   df[keep, , drop = FALSE]
 }
 
@@ -1862,14 +1920,41 @@ display_names_p <- ifelse(
 )
 name_map_pitching <- setNames(raw_names_p, display_names_p)
 
-allowed_players_for <- function(email) {
+allowed_players_for <- function(email, role = c("pitcher", "batter", "catcher")) {
   email <- normalize_email(email)[1]
   if (is.na(email)) return(character(0))
-  df <- get0("pitch_data_pitching", inherits = TRUE)
-  if (is.null(df) || !("Email" %in% names(df))) return(character(0))
-  matches <- df$Pitcher[normalize_email(df$Email) == email]
-  matches <- matches[!is.na(matches) & nzchar(matches)]
-  sort(unique(matches))
+
+  roles <- unique(tolower(role))
+  if (!length(roles) || "all" %in% roles) roles <- c("pitcher", "batter", "catcher")
+
+  collect_names <- function(df, email_col, name_col) {
+    if (is.null(df) || !(email_col %in% names(df)) || !(name_col %in% names(df))) {
+      return(character(0))
+    }
+    emails <- normalize_email(df[[email_col]])
+    names_vec <- as.character(df[[name_col]])
+    keep <- !is.na(emails) & emails == email & !is.na(names_vec) & nzchar(names_vec)
+    names_vec[keep]
+  }
+
+  out <- character(0)
+
+  if ("pitcher" %in% roles) {
+    df_pitch <- get0("pitch_data_pitching", inherits = TRUE)
+    out <- c(out, collect_names(df_pitch, "Email", "Pitcher"))
+    out <- c(out, collect_names(df_pitch, "PitcherEmail", "Pitcher"))
+  }
+
+  df_all <- get0("pitch_data", inherits = TRUE)
+  if ("batter" %in% roles) {
+    out <- c(out, collect_names(df_all, "BatterEmail", "Batter"))
+  }
+  if ("catcher" %in% roles) {
+    out <- c(out, collect_names(df_all, "CatcherEmail", "Catcher"))
+  }
+
+  out <- out[!is.na(out) & nzchar(out)]
+  sort(unique(out))
 }
 
 
@@ -2739,7 +2824,7 @@ mod_hit_server <- function(id, is_active = shiny::reactive(TRUE)) {
       }
       if (!user_is_admin(session)) {
         ue <- get_user_email(session, input)
-        allowed <- allowed_players_for(ue)
+        allowed <- allowed_players_for(ue, role = "batter")
         if (length(allowed)) {
           d <- d %>% dplyr::filter(Batter %in% allowed)
         } else {
@@ -2768,7 +2853,7 @@ mod_hit_server <- function(id, is_active = shiny::reactive(TRUE)) {
         selected <- if (length(choices)) "All" else NULL
       } else {
         ue <- get_user_email(session, input)
-        allowed <- intersect(hitters, allowed_players_for(ue))
+        allowed <- intersect(hitters, allowed_players_for(ue, role = "batter"))
         pretty_allowed <- pretty[pretty %in% allowed]
         if (!length(pretty_allowed)) {
           choices <- setNames("No data", "No data")
@@ -3893,7 +3978,7 @@ mod_catch_server <- function(id, is_active = shiny::reactive(TRUE)) {
       d <- pitch_data
       if (!user_is_admin(session)) {
         ue <- get_user_email(session, input)
-        allowed <- allowed_players_for(ue)
+        allowed <- allowed_players_for(ue, role = "catcher")
         if (length(allowed)) {
           d <- d %>% dplyr::filter(Catcher %in% allowed)
         } else {
@@ -3924,7 +4009,7 @@ mod_catch_server <- function(id, is_active = shiny::reactive(TRUE)) {
         }
       } else {
         ue <- get_user_email(session, input)
-        allowed <- intersect(catchers, allowed_players_for(ue))
+        allowed <- intersect(catchers, allowed_players_for(ue, role = "catcher"))
         pretty_allowed <- pretty[pretty %in% allowed]
         if (!length(pretty_allowed)) {
           choices <- setNames("No data", "No data")
@@ -5687,12 +5772,10 @@ mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
       }
 
       ue <- get_user_email(session, input)
-      allowed <- allowed_players_for(ue)
-      allowed <- allowed[!is.na(allowed) & nzchar(allowed)]
       list(
-        pitchers = allowed,
-        batters  = allowed,
-        catchers = allowed
+        pitchers = allowed_players_for(ue, role = "pitcher"),
+        batters  = allowed_players_for(ue, role = "batter"),
+        catchers = allowed_players_for(ue, role = "catcher")
       )
     })
 
@@ -6493,7 +6576,7 @@ mod_comp_server <- function(id, is_active = shiny::reactive(TRUE)) {
       if (identical(dom, "Pitcher")) {
         base_map <- name_map_pitching
         if (!is_admin_val) {
-          allowed <- allowed_players_for(get_user_email(session, input))
+          allowed <- allowed_players_for(get_user_email(session, input), role = "pitcher")
           choices <- make_subset(base_map, allowed)
           if (identical(unname(choices), "No data")) {
             return(list(choices = choices, selected = "No data"))
@@ -6509,7 +6592,7 @@ mod_comp_server <- function(id, is_active = shiny::reactive(TRUE)) {
       if (identical(dom, "Hitter")) {
         base_map <- batter_map
         if (!is_admin_val) {
-          allowed <- allowed_players_for(get_user_email(session, input))
+          allowed <- allowed_players_for(get_user_email(session, input), role = "batter")
           choices <- make_subset(base_map, allowed)
           if (identical(unname(choices), "No data")) {
             return(list(choices = choices, selected = "No data"))
@@ -6525,7 +6608,7 @@ mod_comp_server <- function(id, is_active = shiny::reactive(TRUE)) {
       if (identical(dom, "Catcher")) {
         base_map <- catcher_map
         if (!is_admin_val) {
-          allowed <- allowed_players_for(get_user_email(session, input))
+          allowed <- allowed_players_for(get_user_email(session, input), role = "catcher")
           choices <- make_subset(base_map, allowed)
           if (identical(unname(choices), "No data")) {
             return(list(choices = choices, selected = "No data"))
@@ -6648,8 +6731,13 @@ mod_comp_server <- function(id, is_active = shiny::reactive(TRUE)) {
       if (!nrow(df)) return(df)
 
       if (!user_is_admin(session)) {
-        allowed <- allowed_players_for(get_user_email(session, input))
-        allowed <- allowed[!is.na(allowed) & nzchar(allowed)]
+        allowed <- switch(
+          dom,
+          "Pitcher" = allowed_players_for(get_user_email(session, input), role = "pitcher"),
+          "Hitter"  = allowed_players_for(get_user_email(session, input), role = "batter"),
+          "Catcher" = allowed_players_for(get_user_email(session, input), role = "catcher"),
+          character(0)
+        )
         if (!length(allowed)) return(df[0, , drop = FALSE])
         df <- switch(
           dom,
@@ -13231,7 +13319,7 @@ server <- function(input, output, session) {
         selected <- players[1]
       }
     } else {
-      allowed <- allowed_players_for(get_user_email(session, input))
+      allowed <- allowed_players_for(get_user_email(session, input), role = "pitcher")
       allowed <- allowed[!is.na(allowed) & nzchar(allowed)]
       if (!length(allowed)) {
         choices <- setNames("No data", "No data")
@@ -14571,4 +14659,8 @@ server <- function(input, output, session) {
   output$calc2_hb_adj <- renderText(hb_adj_text(input$calc2_hand, input$calc2_hb))
 }
 # ---------- Run ----------
-shinyApp(ui=ui, server=server)
+if (identical(Sys.getenv("DISABLE_SHINY_AUTORUN"), "1")) {
+  message("DISABLE_SHINY_AUTORUN=1 → shinyApp() skipped")
+} else {
+  shinyApp(ui = ui, server = server)
+}
