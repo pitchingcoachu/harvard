@@ -2,8 +2,7 @@
 # Shiny pitching report with per-player privacy + admin view + customized Stuff+ metric per pitch type
 
 library(shiny)
-library(dplyr)
-library(purrr)
+library(tidyverse)
 library(DT)
 library(gridExtra)
 library(ggplot2)
@@ -1356,9 +1355,28 @@ apply_count_filter <- function(df, selection) {
 # Keep "All" semantics tidy (like locResult)
 
 
-# Robust date parser wrapper (maintains legacy name)
+# Robust m/d/y date parser for mixed inputs
 parse_date_mdy <- function(x) {
-  parse_date_flex(x)
+  x <- trimws(as.character(x))
+  # strip any time portion (" 1:00 PM", "T12:34:56", etc.)
+  x <- sub("^([0-9/\\-]+).*", "\\1", x)
+  
+  out <- suppressWarnings(as.Date(
+    x,
+    tryFormats = c("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y%m%d")
+  ))
+  
+  bad <- is.na(out)
+  if (any(bad)) {
+    num <- suppressWarnings(as.numeric(x[bad]))   # Excel serials
+    is_serial <- !is.na(num) & num > 20000 & num < 60000
+    if (any(is_serial)) {
+      tmp <- out[bad]
+      tmp[is_serial] <- as.Date(num[is_serial], origin = "1899-12-30")
+      out[bad] <- tmp
+    }
+  }
+  out
 }
 
 
@@ -1719,6 +1737,45 @@ ALLOWED_PITCHERS <- c(
 
 # NEW: normalize for case, spaces, punctuation (so "D.J." == "DJ")
 norm_name_ci <- function(x) gsub("[^a-z]", "", tolower(trimws(as.character(x))))
+
+# Restrict a data frame to the logged-in user's rows (unless admin)
+scope_to_user_data <- function(df, email_col = "Email", empty_when_missing = TRUE) {
+  if (is.null(df)) return(df)
+
+  admin_fun <- get0("is_admin", mode = "function", inherits = TRUE)
+  if (!is.null(admin_fun) && is.function(admin_fun)) {
+    if (isTRUE(admin_fun())) return(df)
+  }
+
+  email_fun <- get0("user_email", mode = "function", inherits = TRUE)
+  if (is.null(email_fun) || !is.function(email_fun)) {
+    return(if (isTRUE(empty_when_missing)) df[0, , drop = FALSE] else df)
+  }
+
+  user_email_val <- email_fun()
+  if (is.null(user_email_val) || is.na(user_email_val) || !nzchar(user_email_val)) {
+    return(df[0, , drop = FALSE])
+  }
+
+  if (!(email_col %in% names(df))) {
+    return(if (isTRUE(empty_when_missing)) df[0, , drop = FALSE] else df)
+  }
+
+  normalize_email_value <- function(x) {
+    raw <- as.character(x)
+    raw[is.na(x)] <- NA_character_
+    out <- trimws(tolower(raw))
+    out[out == ""] <- NA_character_
+    out
+  }
+
+  target <- normalize_email_value(user_email_val)[1]
+  if (is.na(target) || !nzchar(target)) return(df[0, , drop = FALSE])
+
+  emails <- normalize_email_value(df[[email_col]])
+  keep <- !is.na(emails) & emails == target
+  df[keep, , drop = FALSE]
+}
 
 # Keep the full dataset for Hitting & global refs
 # but build a PITCHING-ONLY copy that is filtered to the whitelist
@@ -2593,12 +2650,7 @@ safe_for_dt <- function(df) {
   as.data.frame(out, stringsAsFactors = FALSE)
 }
 
-mod_hit_server <- function(
-  id,
-  is_active = shiny::reactive(TRUE),
-  user_email = function() NA_character_,
-  is_admin = function() FALSE
-) {
+mod_hit_server <- function(id, is_active = shiny::reactive(TRUE)) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
@@ -2611,41 +2663,24 @@ mod_hit_server <- function(
       HAR_CRI = c("HAR_CRI")
     )
 
-    observeEvent(is_active(), {
-      req(is_active())
-      if (!is_admin()) {
-        updateSelectInput(session, "domain", choices = c("Pitching"), selected = "Pitching")
-      }
-    }, once = TRUE)
-
     codes_for <- function(code) {
       if (is.null(code) || is.na(code)) return(character(0))
       if (code %in% names(TEAM_SYNONYMS)) TEAM_SYNONYMS[[code]] else code
     }
     
+    normalize_email_local <- function(x) {
+      out <- trimws(tolower(as.character(x)))
+      out[out == ""] <- NA_character_
+      out
+    }
+
     pd_team <- reactive({
       req(is_active())
       d <- pitch_data
       if (nzchar(TEAM_CODE)) {
         d <- dplyr::filter(d, BatterTeam %in% codes_for(TEAM_CODE))
       }
-      if (!is_admin()) {
-        ue <- user_email()
-        if (!is.na(ue) && "Email" %in% names(pitch_data)) {
-          vis_pitch <- unique(na.omit(pitch_data$Pitcher[norm_email(pitch_data$Email) == norm_email(ue)]))
-          vis_bat   <- unique(na.omit(pitch_data$Batter[norm_email(pitch_data$Email) == norm_email(ue)]))
-          vis_catch <- unique(na.omit(pitch_data$Catcher[norm_email(pitch_data$Email) == norm_email(ue)]))
-          if (length(vis_pitch) + length(vis_bat) + length(vis_catch) > 0) {
-            d <- d[
-              (!is.na(d$Pitcher) & d$Pitcher %in% vis_pitch) |
-                (!is.na(d$Batter)  & d$Batter  %in% vis_bat)   |
-                (!is.na(d$Catcher) & d$Catcher %in% vis_catch),
-              , drop = FALSE
-            ]
-          }
-        }
-      }
-      d
+      scope_to_user_data(d)
     })
     
     
@@ -2654,33 +2689,48 @@ mod_hit_server <- function(
     observeEvent(is_active(), {
       d <- pd_team()
       hitters <- sort(unique(as.character(d$Batter)))
+      # Map "Last, First" -> "First Last" for labels
       pretty <- if (length(hitters)) {
         stats::setNames(hitters, sapply(hitters, function(x) {
           x <- as.character(x)
           if (grepl(",", x)) paste0(trimws(sub(".*,", "", x)), " ", trimws(sub(",.*", "", x))) else x
         }))
       } else character(0)
+      admin_fun <- get0("is_admin", mode = "function", inherits = TRUE)
+      is_admin_val <- if (!is.null(admin_fun) && is.function(admin_fun)) {
+        isTRUE(admin_fun())
+      } else FALSE
 
-      if (!is_admin()) {
-        ue <- user_email()
-        if (!is.na(ue) && "Email" %in% names(pitch_data)) {
-          visible <- unique(na.omit(pitch_data$Batter[norm_email(pitch_data$Email) == norm_email(ue)]))
-          visible <- sort(unique(visible))
-          if (length(visible)) {
-            pretty <- pretty[names(pretty) %in% visible]
-            choices <- pretty
-            selected <- if (length(pretty)) pretty[[1]] else NULL
-          } else {
-            choices <- c(`No data available` = `No data available`)
-            selected <- "No data available"
-          }
-        } else {
-          choices <- c(`No data available` = `No data available`)
-          selected <- "No data available"
-        }
-      } else {
+      if (is_admin_val) {
         choices <- c("All" = "All", pretty)
-        selected <- "All"
+        selected <- if (length(choices)) "All" else NULL
+      } else {
+        allowed_hitters <- hitters
+        user_email_fun <- get0("user_email", mode = "function", inherits = TRUE)
+        if (!is.null(user_email_fun) && is.function(user_email_fun)) {
+          ue <- user_email_fun()
+          if (!is.null(ue) && nzchar(ue)) {
+            lookup <- get0("lookup_table", inherits = TRUE)
+            if (!is.null(lookup) && "Pitcher" %in% names(lookup) && "Email_lookup" %in% names(lookup)) {
+              allowed_map <- lookup$Pitcher[normalize_email_local(lookup$Email_lookup) == normalize_email_local(ue)]
+              allowed_map <- allowed_map[!is.na(allowed_map) & nzchar(allowed_map)]
+              if (length(allowed_map)) {
+                allowed_hitters <- intersect(allowed_hitters, allowed_map)
+              } else {
+                allowed_hitters <- character(0)
+              }
+            }
+          }
+        }
+
+        pretty <- pretty[pretty %in% allowed_hitters]
+        if (!length(pretty)) {
+          choices <- setNames("No data", "No data")
+          selected <- "No data"
+        } else {
+          choices <- pretty
+          selected <- choices[[1]]
+        }
       }
 
       updateSelectInput(session, "hitter",
@@ -3034,39 +3084,6 @@ mod_hit_server <- function(
     swing_levels <- c("StrikeSwinging","FoulBallNotFieldable","FoulBallFieldable","InPlay")
     hit_levels   <- c("Single","Double","Triple","HomeRun")
     
-    observe({
-      req(is_active())
-      catchers <- sort(unique(na.omit(as.character(pitch_data$Catcher))))
-      pretty <- if (length(catchers)) {
-        stats::setNames(catchers, sapply(catchers, function(x) {
-          if (grepl(",", x)) paste0(trimws(sub(".*,", "", x)), " ", trimws(sub(",.*", "", x))) else x
-        }))
-      } else character(0)
-
-      if (!is_admin()) {
-        ue <- user_email()
-        if (!is.na(ue) && "Email" %in% names(pitch_data)) {
-          visible <- unique(na.omit(pitch_data$Catcher[norm_email(pitch_data$Email) == norm_email(ue)]))
-          if (length(visible)) {
-            pretty <- pretty[names(pretty) %in% visible]
-            choices <- pretty
-            selected <- if (length(pretty)) pretty[[1]] else NULL
-          } else {
-            choices <- c(`No data available` = `No data available`)
-            selected <- "No data available"
-          }
-        } else {
-          choices <- c(`No data available` = `No data available`)
-          selected <- "No data available"
-        }
-      } else {
-        choices <- c("All" = "All", pretty)
-        selected <- "All"
-      }
-
-      updateSelectInput(session, "catcher", choices = choices, selected = selected)
-    })
-
     # Keep count filter tidy
     observeEvent(input$countFilter, {
       sel <- input$countFilter
@@ -3088,22 +3105,11 @@ mod_hit_server <- function(
     }, ignoreInit = TRUE)
     
     # Default date range to last date for selected hitter (LSU only)
-   observeEvent(input$hitter, {
-     req(is_active())
-     d <- pd_team()
-      if (!is_admin()) {
-        ue <- user_email()
-        if (!is.na(ue) && "Email" %in% names(pitch_data)) {
-          visible <- unique(na.omit(pitch_data$Batter[norm_email(pitch_data$Email) == norm_email(ue)]))
-          d <- d[d$Batter %in% visible, , drop = FALSE]
-        }
-      }
-      if (!nrow(d)) return()
-
+    observeEvent(input$hitter, {
+      req(is_active())
+      d <- pd_team()
       last_date <- if (isTRUE(input$hitter == "All")) {
         max(d$Date, na.rm = TRUE)
-      } else if (identical(input$hitter, "No data available")) {
-        NA_real_
       } else {
         mx <- max(d$Date[d$Batter == input$hitter], na.rm = TRUE)
         if (is.finite(mx)) mx else max(d$Date, na.rm = TRUE)
@@ -3112,18 +3118,15 @@ mod_hit_server <- function(
         updateDateRangeInput(session, "dates", start = last_date, end = last_date)
       }
     }, ignoreInit = TRUE)
-
+    
     # --- Filtered data for Hitting (LSU only; no Session Type input) ---
     filtered_hit <- reactive({
       req(is_active(), input$dates, input$hand, input$zoneLoc, input$inZone)
       pitch_types <- if (is.null(input$pitchType)) "All" else input$pitchType
       
       df <- pd_team() %>% dplyr::filter(Date >= input$dates[1], Date <= input$dates[2])
-
+      
       hit_pick <- input$hitter
-      if (!is.null(hit_pick) && hit_pick %in% c("No data available", "")) {
-        return(df[0, , drop = FALSE])
-      }
       if (!is.null(hit_pick) && hit_pick != "All") df <- dplyr::filter(df, Batter == hit_pick)
       if (input$hand != "All") df <- dplyr::filter(df, PitcherThrows == input$hand)
       
@@ -3834,16 +3837,44 @@ mod_catch_ui <- function(id, show_header = FALSE) {
 # =====================================
 # 2) CATCHING SERVER MODULE (replace stub)
 # =====================================
-mod_catch_server <- function(
-  id,
-  is_active = shiny::reactive(TRUE),
-  user_email = function() NA_character_,
-  is_admin = function() FALSE
-) {
+mod_catch_server <- function(id, is_active = shiny::reactive(TRUE)) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    
+
     MIN_THROW_MPH <- 70  # only count throws at/above this speed
+
+    scoped_pitch_data <- reactive({
+      scope_to_user_data(pitch_data)
+    })
+
+    observe({
+      req(is_active())
+      df_all <- scoped_pitch_data()
+      catchers <- sort(unique(as.character(df_all$Catcher)))
+      pretty <- if (length(catchers)) {
+        stats::setNames(catchers, sapply(catchers, function(x) {
+          x <- as.character(x)
+          if (grepl(",", x)) paste0(trimws(sub(".*,", "", x)), " ", trimws(sub(",.*", "", x))) else x
+        }))
+      } else character(0)
+
+      admin_fun <- get0("is_admin", mode = "function", inherits = TRUE)
+      is_admin_val <- if (!is.null(admin_fun) && is.function(admin_fun)) {
+        isTRUE(admin_fun())
+      } else FALSE
+
+      if (is_admin_val) {
+        choices <- c("All" = "All", pretty)
+        selected <- if (length(choices)) "All" else NULL
+      } else {
+        choices <- pretty
+        selected <- if (length(catchers)) catchers[1] else NULL
+      }
+
+      updateSelectInput(session, "catcher",
+                        choices = choices,
+                        selected = selected)
+    })
     
     output$hmResultsUI <- renderUI({
       # Prefer global result_levels; fall back to what’s present in the filtered data
@@ -3920,51 +3951,48 @@ mod_catch_server <- function(
     # Default dates to last date for selected catcher (or global last)
     observeEvent(input$catcher, {
       req(is_active())
-      base <- pitch_data
-      if (!is_admin()) {
-        ue <- user_email()
-        if (!is.na(ue) && "Email" %in% names(base)) {
-          base <- base[norm_email(base$Email) == norm_email(ue), , drop = FALSE]
-        }
+      df_all <- scoped_pitch_data()
+      if (!nrow(df_all)) return()
+
+      to_date <- function(x) {
+        if (inherits(x, "Date")) return(x)
+        suppressWarnings(as.Date(x))
       }
-      if (!nrow(base)) return()
+
+      dates_all <- to_date(df_all$Date)
+      if (all(is.na(dates_all))) return()
 
       last_date <- if (isTRUE(input$catcher == "All")) {
-        max(base$Date, na.rm = TRUE)
-      } else if (identical(input$catcher, "No data available")) {
-        NA_real_
+        suppressWarnings(max(dates_all, na.rm = TRUE))
       } else {
-        mx <- max(base$Date[base$Catcher == input$catcher], na.rm = TRUE)
-        if (is.finite(mx)) mx else max(base$Date, na.rm = TRUE)
+        df_cat <- df_all[df_all$Catcher == input$catcher, , drop = FALSE]
+        dates_cat <- to_date(df_cat$Date)
+        mx <- suppressWarnings(max(dates_cat, na.rm = TRUE))
+        if (is.finite(mx)) mx else suppressWarnings(max(dates_all, na.rm = TRUE))
       }
+
       if (is.finite(last_date)) {
         updateDateRangeInput(session, "dates", start = last_date, end = last_date)
       }
     }, ignoreInit = TRUE)
-    
+
     # Filtered data for Catching
     filtered_catch <- reactive({
       req(is_active())
-      
+
       # helpers
       is_valid_dates <- function(d) !is.null(d) && length(d) == 2 && all(is.finite(d))
       nnz <- function(x) !is.null(x) && !is.na(x)
-      
-      # Guard: if dates are mid-update, return empty quickly
-      if (!is_valid_dates(input$dates)) return(pitch_data[0, , drop = FALSE])
-      
-      pitch_types <- if (is.null(input$pitchType)) "All" else input$pitchType
-      
-      # Session type first
-      df <- if (identical(input$sessionType, "All")) pitch_data
-      else dplyr::filter(pitch_data, SessionType == input$sessionType)
 
-      if (!is_admin()) {
-        ue <- user_email()
-        if (!is.na(ue) && "Email" %in% names(pitch_data)) {
-          df <- df[norm_email(df$Email) == norm_email(ue), , drop = FALSE]
-        }
-      }
+      # Guard: if dates are mid-update, return empty quickly
+      base_df <- scoped_pitch_data()
+      if (!is_valid_dates(input$dates)) return(base_df[0, , drop = FALSE])
+
+      pitch_types <- if (is.null(input$pitchType)) "All" else input$pitchType
+
+      # Session type first
+      df <- if (identical(input$sessionType, "All")) base_df
+      else dplyr::filter(base_df, SessionType == input$sessionType)
       
       # ⛔️ Drop warmups & blank pitch types
       if ("TaggedPitchType" %in% names(df)) {
@@ -3979,9 +4007,6 @@ mod_catch_server <- function(
       
       # Catcher filter
       cat_pick <- input$catcher
-      if (!is.null(cat_pick) && cat_pick %in% c("No data available", "")) {
-        return(df[0, , drop = FALSE])
-      }
       if (!is.null(cat_pick) && cat_pick != "All") {
         df <- dplyr::filter(df, Catcher == cat_pick)
       }
@@ -5528,15 +5553,10 @@ mod_leader_ui <- function(id, show_header = FALSE) {
   )
 }
 
-mod_leader_server <- function(
-  id,
-  is_active = shiny::reactive(TRUE),
-  user_email = function() NA_character_,
-  is_admin = function() FALSE
-) {
+mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-
+    
     # ---------- constants ----------
     TEAM_CODE <- "HAR_CRI"
     
@@ -5580,7 +5600,64 @@ mod_leader_server <- function(
       col <- df[[nm[1]]]
       safe_div(sum(as.logical(col), na.rm = TRUE), sum(!is.na(col)))
     }
-    
+
+    admin_fun <- get0("is_admin", mode = "function", inherits = TRUE)
+    user_email_fun <- get0("user_email", mode = "function", inherits = TRUE)
+
+    normalize_email <- function(x) {
+      out <- trimws(tolower(as.character(x)))
+      out[out == ""] <- NA_character_
+      out
+    }
+
+    filter_to_allowed <- function(df, col, allowed) {
+      if (is.null(allowed)) return(df)
+      if (!length(allowed)) return(df[0, , drop = FALSE])
+      if (!(col %in% names(df))) return(df[0, , drop = FALSE])
+      df[df[[col]] %in% allowed, , drop = FALSE]
+    }
+
+    visible_players <- reactive({
+      admin_val <- if (!is.null(admin_fun) && is.function(admin_fun)) {
+        isTRUE(admin_fun())
+      } else FALSE
+
+      if (admin_val) {
+        return(list(pitchers = NULL, batters = NULL, catchers = NULL))
+      }
+
+      ue <- if (!is.null(user_email_fun) && is.function(user_email_fun)) user_email_fun() else NA_character_
+      if (is.null(ue) || is.na(ue) || !nzchar(ue)) {
+        return(list(pitchers = character(0), batters = character(0), catchers = character(0)))
+      }
+
+      ue_norm <- normalize_email(ue)[1]
+
+      allowed_pitchers <- character(0)
+      if (exists("pitch_data_pitching", inherits = TRUE)) {
+        dfp <- get("pitch_data_pitching", inherits = TRUE)
+        if ("Email" %in% names(dfp)) {
+          allowed_pitchers <- unique(dfp$Pitcher[normalize_email(dfp$Email) == ue_norm])
+        }
+      }
+
+      allowed_batters <- character(0)
+      allowed_catchers <- character(0)
+      if (exists("pitch_data", inherits = TRUE)) {
+        dfa <- get("pitch_data", inherits = TRUE)
+        if ("Email" %in% names(dfa)) {
+          allowed_batters  <- unique(dfa$Batter [normalize_email(dfa$Email) == ue_norm])
+          allowed_catchers <- unique(dfa$Catcher[normalize_email(dfa$Email) == ue_norm])
+        }
+      }
+
+      list(
+        pitchers = allowed_pitchers[!is.na(allowed_pitchers) & nzchar(allowed_pitchers)],
+        batters  = allowed_batters [!is.na(allowed_batters)  & nzchar(allowed_batters)],
+        catchers = allowed_catchers[!is.na(allowed_catchers) & nzchar(allowed_catchers)]
+      )
+    })
+
     # Keep count filter tidy
     observeEvent(input$countFilter, {
       sel <- input$countFilter
@@ -5590,19 +5667,41 @@ mod_leader_server <- function(
         updateSelectInput(session, "countFilter", selected = setdiff(sel, "All"))
       }
     }, ignoreInit = TRUE)
-    
+
+    scoped_pitch_data <- reactive({
+      scope_to_user_data(pitch_data)
+    })
+
+    scoped_pitch_data_pitching <- reactive({
+      scope_to_user_data(pitch_data_pitching)
+    })
+
     # ---------- TEAM-SCOPED BASE ----------
     # Returns the base dataset for the selected domain & session type,
     # filtered to LSU-only rows (PitcherTeam for Pitching/Catching; BatterTeam for Hitting).
     team_base <- reactive({
       req(is_active())
+      vp <- visible_players()
+
       base <- switch(
         input$domain,
-        "Pitching" = if (input$sessionType == "All") pitch_data_pitching else dplyr::filter(pitch_data_pitching, SessionType == input$sessionType),
-        "Hitting"  = if (input$sessionType == "All") pitch_data               else dplyr::filter(pitch_data,            SessionType == input$sessionType),
-        "Catching" = if (input$sessionType == "All") pitch_data               else dplyr::filter(pitch_data,            SessionType == input$sessionType)
+        "Pitching" = {
+          df <- scoped_pitch_data_pitching()
+          df <- if (identical(input$sessionType, "All")) df else dplyr::filter(df, SessionType == input$sessionType)
+          filter_to_allowed(df, "Pitcher", vp$pitchers)
+        },
+        "Hitting"  = {
+          df <- scoped_pitch_data()
+          df <- if (identical(input$sessionType, "All")) df else dplyr::filter(df, SessionType == input$sessionType)
+          filter_to_allowed(df, "Batter", vp$batters)
+        },
+        "Catching" = {
+          df <- scoped_pitch_data()
+          df <- if (identical(input$sessionType, "All")) df else dplyr::filter(df, SessionType == input$sessionType)
+          filter_to_allowed(df, "Catcher", vp$catchers)
+        }
       )
-      
+
       # Allow missing/blank TEAM_CODE → no team scoping
       tc <- get0("TEAM_CODE", ifnotfound = "")
       if (!is.character(tc) || length(tc) < 1 || !nzchar(tc[1])) return(base)
@@ -5615,42 +5714,13 @@ mod_leader_server <- function(
       }
       
       if (identical(input$domain, "Hitting")) {
-        base <- dplyr::filter(base, BatterTeam %in% codes_for(tc[1]))
+        dplyr::filter(base, BatterTeam %in% codes_for(tc[1]))
       } else {
-        base <- dplyr::filter(base, PitcherTeam %in% codes_for(tc[1]))
+        dplyr::filter(base, PitcherTeam %in% codes_for(tc[1]))
       }
-
-      if (!is_admin()) {
-        ue <- norm_email(user_email())
-        if (!is.na(ue)) {
-          visible_pitchers <- unique(pitch_data_pitching$Pitcher[norm_email(pitch_data_pitching$Email) == ue])
-          visible_norm <- norm_name_ci(visible_pitchers)
-
-          if ("Email" %in% names(base)) {
-            base <- base[norm_email(base$Email) == ue, , drop = FALSE]
-          }
-
-          filt_by_name <- function(vals) {
-            if (is.null(vals)) return(rep(FALSE, length(vals)))
-            norm_name_ci(vals) %in% visible_norm
-          }
-
-          if ("Pitcher" %in% names(base)) {
-            base <- base[filt_by_name(base$Pitcher), , drop = FALSE]
-          }
-          if (identical(input$domain, "Hitting") && "Batter" %in% names(base)) {
-            base <- base[filt_by_name(base$Batter), , drop = FALSE]
-          }
-          if (identical(input$domain, "Catching") && "Catcher" %in% names(base)) {
-            base <- base[filt_by_name(base$Catcher), , drop = FALSE]
-          }
-        }
-      }
-
-      base
     })
-
-
+    
+    
     # Default the date range to MIN and MAX for chosen domain/sessionType (LSU-only)
     observe({
       req(is_active())
@@ -5667,7 +5737,7 @@ mod_leader_server <- function(
       req(is_active(), input$dates, input$hand, input$zoneLoc, input$inZone)
       
       df <- team_base()
-
+      
       # Date range
       df <- dplyr::filter(df, Date >= input$dates[1], Date <= input$dates[2])
       
@@ -6357,12 +6427,7 @@ mod_comp_ui <- function(id, show_header = FALSE) {
   )
 } 
 
-mod_comp_server <- function(
-  id,
-  is_active = shiny::reactive(TRUE),
-  user_email = function() NA_character_,
-  is_admin = function() FALSE
-) {
+mod_comp_server <- function(id, is_active = shiny::reactive(TRUE)) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     tooltip_css <- "color:#fff !important;font-weight:600;padding:6px;border-radius:8px;text-shadow:0 1px 1px rgba(0,0,0,.4);"
@@ -6374,12 +6439,65 @@ mod_comp_server <- function(
                                           Catcher = "Select Catcher:"
     )
     .player_choices <- function(dom) {
-      switch(
-        dom,
-        Pitcher = c("All" = "All", name_map_pitching),
-        Hitter  = c("All" = "All", batter_map),
-        Catcher = c("All" = "All", catcher_map)
-      )
+      admin_fun <- get0("is_admin", mode = "function", inherits = TRUE)
+      is_admin_val <- if (!is.null(admin_fun) && is.function(admin_fun)) {
+        isTRUE(admin_fun())
+      } else FALSE
+
+      make_subset <- function(map_vec, allowed_raw) {
+        if (!length(map_vec)) return(map_vec)
+        subset_map <- map_vec[map_vec %in% allowed_raw]
+        if (!length(subset_map) && length(allowed_raw)) {
+          stats::setNames(allowed_raw, allowed_raw)
+        } else subset_map
+      }
+
+      if (identical(dom, "Pitcher")) {
+        base_map <- name_map_pitching
+        if (!is_admin_val) {
+          df <- scope_to_user_data(pitch_data_pitching)
+          allowed <- unique(df$Pitcher)
+          allowed <- allowed[!is.na(allowed) & nzchar(allowed)]
+          choices <- make_subset(base_map, allowed)
+          return(list(
+            choices  = choices,
+            selected = if (length(choices)) choices[[1]] else NULL
+          ))
+        }
+        return(list(choices = c("All" = "All", base_map), selected = "All"))
+      }
+
+      if (identical(dom, "Hitter")) {
+        base_map <- batter_map
+        if (!is_admin_val) {
+          df <- scope_to_user_data(pitch_data)
+          allowed <- unique(df$Batter)
+          allowed <- allowed[!is.na(allowed) & nzchar(allowed)]
+          choices <- make_subset(base_map, allowed)
+          return(list(
+            choices  = choices,
+            selected = if (length(choices)) choices[[1]] else NULL
+          ))
+        }
+        return(list(choices = c("All" = "All", base_map), selected = "All"))
+      }
+
+      if (identical(dom, "Catcher")) {
+        base_map <- catcher_map
+        if (!is_admin_val) {
+          df <- scope_to_user_data(pitch_data)
+          allowed <- unique(df$Catcher)
+          allowed <- allowed[!is.na(allowed) & nzchar(allowed)]
+          choices <- make_subset(base_map, allowed)
+          return(list(
+            choices  = choices,
+            selected = if (length(choices)) choices[[1]] else NULL
+          ))
+        }
+        return(list(choices = c("All" = "All", base_map), selected = "All"))
+      }
+
+      list(choices = character(0), selected = NULL)
     }
     
     # ---------- Helpers ----------
@@ -6398,43 +6516,17 @@ mod_comp_server <- function(
     # ---------- Player UIs ----------
     output$cmpA_player_ui <- renderUI({
       lab <- .player_label(input$domain)
-      choices <- .player_choices(input$domain)
-      if (!is_admin()) {
-        ue <- user_email()
-        visible <- character(0)
-        if (!is.na(ue) && "Email" %in% names(pitch_data_pitching)) {
-          visible <- unique(pitch_data_pitching$Pitcher[norm_email(pitch_data_pitching$Email) == norm_email(ue)])
-        }
-        if (length(visible)) {
-          disp <- display_names_p[raw_names_p %in% visible]
-          choices <- setNames(visible, disp)
-        } else {
-          choices <- character(0)
-        }
-        selectInput(ns("cmpA_player"), lab, choices = choices, selected = if (length(choices)) choices[[1]] else NULL)
-      } else {
-        selectInput(ns("cmpA_player"), lab, choices = choices, selected = "All")
-      }
+      opts <- .player_choices(input$domain)
+      selectInput(ns("cmpA_player"), lab,
+                  choices = opts$choices,
+                  selected = opts$selected)
     })
     output$cmpB_player_ui <- renderUI({
       lab <- .player_label(input$domain)
-      choices <- .player_choices(input$domain)
-      if (!is_admin()) {
-        ue <- user_email()
-        visible <- character(0)
-        if (!is.na(ue) && "Email" %in% names(pitch_data_pitching)) {
-          visible <- unique(pitch_data_pitching$Pitcher[norm_email(pitch_data_pitching$Email) == norm_email(ue)])
-        }
-        if (length(visible)) {
-          disp <- display_names_p[raw_names_p %in% visible]
-          choices <- setNames(visible, disp)
-        } else {
-          choices <- character(0)
-        }
-        selectInput(ns("cmpB_player"), lab, choices = choices, selected = if (length(choices)) choices[[1]] else NULL)
-      } else {
-        selectInput(ns("cmpB_player"), lab, choices = choices, selected = "All")
-      }
+      opts <- .player_choices(input$domain)
+      selectInput(ns("cmpB_player"), lab,
+                  choices = opts$choices,
+                  selected = opts$selected)
     })
     
     .last_date_for <- function(dom, player, st) {
@@ -6510,21 +6602,8 @@ mod_comp_server <- function(
       
       df <- if (exists("pitch_data_pitching")) pitch_data_pitching else pitch_data
       if (!nrow(df)) return(df[0, , drop = FALSE])
-      
-      # privacy scoping
-      if (!is_admin()) {
-        ue <- user_email()
-        if (!is.na(ue)) {
-          if ("Email" %in% names(df)) {
-            norm_email_local <- function(x) tolower(trimws(x))
-            df <- dplyr::filter(df, norm_email_local(Email) == norm_email_local(ue))
-          }
-          visible_pitchers <- unique(na.omit(df$Pitcher))
-          if (!is.null(player) && !identical(player, "All") && length(visible_pitchers) && !(player %in% visible_pitchers)) {
-            player <- visible_pitchers[1]
-          }
-        }
-      }
+
+      df <- scope_to_user_data(df)
       if (!nrow(df)) return(df)
       
       if (!("SessionType_std" %in% names(df))) {
@@ -8075,18 +8154,6 @@ server <- function(input, output, session) {
     u <- user_email()
     !is.na(u) && u %in% admin_emails
   })
-
-  observe({
-    admin <- is_admin()
-    if (isTRUE(admin)) {
-      shiny::showTab(inputId = "top", target = "Camps")
-    } else {
-      shiny::hideTab(inputId = "top", target = "Camps")
-      if (identical(input$top, "Camps")) {
-        updateNavbarPage(session, "top", selected = "Pitching")
-      }
-    }
-  })
   
   tooltip_css <- "color:#fff !important;font-weight:600;padding:6px;border-radius:8px;text-shadow:0 1px 1px rgba(0,0,0,.4);"
   
@@ -8165,42 +8232,28 @@ server <- function(input, output, session) {
     }
     
     df <- as.data.frame(rows, stringsAsFactors = FALSE)
-    
+
+    if (!isTRUE(is_admin())) {
+      user_email_fun <- get0("user_email", mode = "function", inherits = TRUE)
+      ue <- if (!is.null(user_email_fun) && is.function(user_email_fun)) user_email_fun() else NA_character_
+      player_scope <- character(0)
+      if (!is.na(ue) && nzchar(ue)) {
+        player_scope <- unique(pitch_data_pitching$Pitcher[norm_email(pitch_data_pitching$Email) == norm_email(ue)])
+        player_scope <- player_scope[!is.na(player_scope) & nzchar(player_scope)]
+      }
+      df <- df[df$author_email == ue |
+                 (nzchar(df$pitcher) & df$pitcher %in% player_scope), , drop = FALSE]
+      if (!nrow(df)) {
+        return(DT::datatable(data.frame(Message="No notes to display"), options=list(dom='t'), rownames=FALSE))
+      }
+    }
+
     # Sort newest first by created_at_utc (robust)
     ct  <- parse_utc_datetime(df$created_at_utc)
     ord <- order(ct, decreasing = TRUE)
     df  <- df[ord, , drop = FALSE]
     ct  <- ct[ord]
-
-    if (!is_admin()) {
-      ue <- norm_email(user_email())
-      if (!is.na(ue)) {
-        keep <- rep(FALSE, nrow(df))
-
-        if ("author_email" %in% names(df)) {
-          keep <- keep | (norm_email(df$author_email) == ue)
-        }
-
-        allowed_pitchers <- character(0)
-        if ("Email" %in% names(pitch_data)) {
-          allowed_pitchers <- unique(pitch_data$Pitcher[norm_email(pitch_data$Email) == ue])
-        }
-
-        if (length(allowed_pitchers)) {
-          allowed_pitchers_norm <- norm_name_ci(allowed_pitchers)
-          pitcher_norm <- norm_name_ci(df$pitcher)
-          keep <- keep | (pitcher_norm %in% allowed_pitchers_norm)
-        }
-
-        df <- df[keep, , drop = FALSE]
-        ct <- ct[keep]
-      }
-    }
-
-    if (!nrow(df)) {
-      return(DT::datatable(data.frame(Message="No notes available"), options=list(dom='t'), rownames=FALSE))
-    }
-
+    
     # Split Suite::Subpage
     page2 <- ifelse(is.na(df$page), "", df$page)
     sp    <- strsplit(page2, "::", fixed = TRUE)
@@ -8495,31 +8548,11 @@ server <- function(input, output, session) {
   # (Note: Shiny exposes url_* in session$clientData.) :contentReference[oaicite:2]{index=2}
   
   # Mount the new modules (lazy-run only when their tab is active)
-  mod_hit_server(
-    "hit",
-    is_active = reactive(input$top == "Hitting"),
-    user_email = user_email,
-    is_admin = is_admin
-  )
-  mod_catch_server(
-    "catch",
-    is_active = reactive(input$top == "Catching"),
-    user_email = user_email,
-    is_admin = is_admin
-  )
+  mod_hit_server("hit",     is_active = reactive(input$top == "Hitting"))
+  mod_catch_server("catch", is_active = reactive(input$top == "Catching"))
   mod_camps_server("camps")
-  mod_leader_server(
-    "leader",
-    is_active = reactive(input$top == "Leaderboard"),
-    user_email = user_email,
-    is_admin = is_admin
-  )
-  mod_comp_server(
-    "comp",
-    is_active = reactive(input$top == "Comparison Suite"),
-    user_email = user_email,
-    is_admin = is_admin
-  )
+  mod_leader_server("leader", is_active = reactive(input$top == "Leaderboard"))
+  mod_comp_server("comp",   is_active = reactive(input$top == "Comparison Suite"))
   
   
   # Buttons above Summary table
@@ -12013,11 +12046,11 @@ server <- function(input, output, session) {
     req(input$corr_domain)
     
     if (input$corr_domain == "Pitching") {
-      # Use the whitelist-filtered pitch_data_pitching for consistency with other modules
-      players <- sort(unique(pitch_data_pitching$Pitcher))
+      data <- scope_to_user_data(pitch_data_pitching)
+      players <- sort(unique(na.omit(as.character(data$Pitcher))))
     } else if (input$corr_domain == "Hitting") {
       # Apply team filtering to hitting data
-      team_data <- pitch_data
+      team_data <- scope_to_user_data(pitch_data)
       tc <- get0("TEAM_CODE", ifnotfound = "")
       if (nzchar(tc)) {
         # Team synonyms for LSU
@@ -12032,7 +12065,7 @@ server <- function(input, output, session) {
       players <- sort(unique(na.omit(as.character(team_data$Batter))))
     } else if (input$corr_domain == "Catching") {
       # Apply team filtering to catching data
-      team_data <- pitch_data
+      team_data <- scope_to_user_data(pitch_data)
       tc <- get0("TEAM_CODE", ifnotfound = "")
       if (nzchar(tc)) {
         # Team synonyms for LSU
@@ -12046,7 +12079,7 @@ server <- function(input, output, session) {
       }
       players <- sort(unique(na.omit(as.character(team_data$Catcher))))
     } else {
-      players <- c()
+      players <- character(0)
     }
     
     updateSelectInput(session, "corr_player", 
@@ -12060,7 +12093,8 @@ server <- function(input, output, session) {
     
     if (input$corr_domain == "Pitching") {
       # Get unique pitch types from the data using TaggedPitchType
-      available_pitches <- sort(unique(na.omit(pitch_data$TaggedPitchType)))
+      scoped_pitching <- scope_to_user_data(pitch_data_pitching)
+      available_pitches <- sort(unique(na.omit(as.character(scoped_pitching$TaggedPitchType))))
       cat("Available pitches from data:", paste(available_pitches, collapse = ", "), "\n")
       # Stuff+ base pitches should only be Fastball and Sinker
       stuff_base_pitches <- c("Fastball", "Sinker")
@@ -12192,15 +12226,15 @@ server <- function(input, output, session) {
     # Get base data and determine player column based on domain
     if (input$corr_domain == "Pitching") {
       # Use the whitelist-filtered pitch_data_pitching for consistency with other modules
-      data <- pitch_data_pitching
+      data <- scope_to_user_data(pitch_data_pitching)
       player_col <- "Pitcher"
       cat("Using pitch_data_pitching (whitelist-filtered), initial rows:", nrow(data), "\n")
     } else if (input$corr_domain == "Hitting") {
-      data <- pitch_data %>% filter(!is.na(Batter))
+      data <- scope_to_user_data(pitch_data) %>% filter(!is.na(Batter))
       player_col <- "Batter"
       cat("Using pitch_data (hitting), initial rows:", nrow(data), "\n")
     } else if (input$corr_domain == "Catching") {
-      data <- pitch_data %>% filter(!is.na(Catcher))
+      data <- scope_to_user_data(pitch_data) %>% filter(!is.na(Catcher))
       player_col <- "Catcher"
       cat("Using pitch_data (catching), initial rows:", nrow(data), "\n")
     } else {
@@ -13128,21 +13162,37 @@ server <- function(input, output, session) {
   observe({
     req(pitch_data)
     
-    # Use the whitelist-filtered pitch_data_pitching for consistency with other modules
-    players <- sort(unique(pitch_data_pitching$Pitcher))
-    
-    # Filter by admin/user permissions
-    if (!is_admin()) {
-      ue <- user_email()
-      if (!is.na(ue)) {
-        visible_players <- unique(pitch_data_pitching$Pitcher[norm_email(pitch_data_pitching$Email) == norm_email(ue)])
-        players <- intersect(players, visible_players)
+    admin_val <- isTRUE(is_admin())
+    scoped <- if (admin_val) pitch_data_pitching else scope_to_user_data(pitch_data_pitching)
+    players <- sort(unique(as.character(scoped$Pitcher)))
+
+    if (!length(players)) {
+      choices <- setNames("No data", "No data")
+      selected <- "No data"
+    } else {
+      pretty <- stats::setNames(players, sapply(players, function(x) {
+        x <- as.character(x)
+        if (grepl(",", x)) paste0(trimws(sub(".*,", "", x)), " ", trimws(sub(",.*", "", x))) else x
+      }))
+
+      if (admin_val) {
+        choices <- pretty
+        selected <- players[1]
+      } else {
+        named_subset <- pretty
+        if (!length(named_subset)) {
+          choices <- setNames("No data", "No data")
+          selected <- "No data"
+        } else {
+          choices <- named_subset
+          selected <- choices[[1]]
+        }
       }
     }
-    
+
     updateSelectInput(session, "pp_player_select",
-                      choices = players,
-                      selected = if(length(players) > 0) players[1] else NULL)
+                      choices = choices,
+                      selected = selected)
   })
   
   # Update date range when player changes
