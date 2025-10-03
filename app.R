@@ -6705,6 +6705,15 @@ mod_comp_server <- function(id, is_active = shiny::reactive(TRUE)) {
       is_admin_val <- if (!is.null(admin_fun) && is.function(admin_fun)) {
         isTRUE(admin_fun())
       } else FALSE
+      
+      # Check if we're in local development mode (no TEAM_CODE)
+      tc <- get0("TEAM_CODE", ifnotfound = "")
+      is_local_dev <- !is.character(tc) || length(tc) < 1 || !nzchar(tc[1])
+      
+      # In local development, treat as admin (show all players)
+      if (is_local_dev) {
+        is_admin_val <- TRUE
+      }
 
       make_subset <- function(map_vec, allowed_raw) {
         if (is.null(allowed_raw)) return(map_vec)
@@ -6871,7 +6880,12 @@ mod_comp_server <- function(id, is_active = shiny::reactive(TRUE)) {
       df <- scope_to_user_data(df)
       if (!nrow(df)) return(df)
 
-      if (!user_is_admin(session)) {
+      # Check if we're in local development mode (no TEAM_CODE)
+      tc <- get0("TEAM_CODE", ifnotfound = "")
+      is_local_dev <- !is.character(tc) || length(tc) < 1 || !nzchar(tc[1])
+      
+      # Skip user filtering in local development mode
+      if (!is_local_dev && !user_is_admin(session)) {
         allowed <- switch(
           dom,
           "Pitcher" = allowed_players_for(get_user_email(session, input), role = "pitcher"),
@@ -14860,28 +14874,17 @@ mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
       ue <- get_user_email(session, input)
       is_admin_result <- user_is_admin(session, ue)
       
-      message("DEBUG: User email: '", ue %||% "NULL", "'")
-      message("DEBUG: Is admin: ", is_admin_result)
-      message("DEBUG: TEAM_CODE: '", tc %||% "NULL", "'")
-      message("DEBUG: Base data rows before filtering: ", nrow(base))
-      
       # Match TMdata logic: if no TEAM_CODE, skip user filtering for local development
       if (!is.character(tc) || length(tc) < 1 || !nzchar(tc[1])) {
-        message("DEBUG: No TEAM_CODE - bypassing user filtering (local development mode)")
         return(base)
       }
       
       if (!is_admin_result) {
         allowed_names <- allowed_names_for_user(ue)
-        message("DEBUG: Allowed names for user: ", paste(allowed_names, collapse = ", "))
         if (!length(allowed_names)) {
-          message("DEBUG: No allowed names - returning empty dataset")
           return(base[0, , drop = FALSE])
         }
         base <- filter_to_user(base, input$domain %||% "Leaderboard", allowed_names)
-        message("DEBUG: After user filtering: ", nrow(base), " rows")
-      } else {
-        message("DEBUG: User is admin - skipping user filtering")
       }
 
       # If we get here, we have a valid TEAM_CODE, so apply team filtering
@@ -14894,16 +14897,12 @@ mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
       }
 
       team_codes <- codes_for(tc[1])
-      message("DEBUG: Team codes for filtering: ", paste(team_codes, collapse = ", "))
       
-      result <- if (identical(input$domain, "Hitting")) {
+      if (identical(input$domain, "Hitting")) {
         dplyr::filter(base, BatterTeam %in% team_codes)
       } else {
         dplyr::filter(base, PitcherTeam %in% team_codes)
       }
-      
-      message("DEBUG: After team filtering: ", nrow(result), " rows")
-      result
     })
 
     observe({
