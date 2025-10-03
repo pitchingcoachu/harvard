@@ -1998,6 +1998,13 @@ scope_to_user_data <- function(df,
                               empty_when_missing = TRUE) {
   if (is.null(df)) return(df)
 
+  # Check if we're in local development mode (no TEAM_CODE)
+  tc <- get0("TEAM_CODE", ifnotfound = "")
+  is_local_dev <- !is.character(tc) || length(tc) < 1 || !nzchar(tc[1])
+  
+  # In local development, bypass all user filtering
+  if (is_local_dev) return(df)
+
   admin_fun <- get0("is_admin", mode = "function", inherits = TRUE)
   if (!is.null(admin_fun) && is.function(admin_fun)) {
     if (isTRUE(admin_fun())) return(df)
