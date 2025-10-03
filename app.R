@@ -419,6 +419,25 @@ sanitize_for_dt <- function(dfx) {
 }
 
 
+wrap_pitch_counts <- function(x) {
+  vals <- vapply(seq_along(x), function(i) {
+    val <- x[[i]]
+    txt <- as.character(val %||% "")
+    if (!nzchar(trimws(txt))) return("")
+    if (grepl("<", txt, fixed = TRUE)) return(txt)
+    num <- suppressWarnings(as.numeric(gsub("[^0-9]", "", txt)))
+    if (!is.na(num) && num > 0) {
+      sprintf(
+        '<a href="javascript:void(0)" class="pitch-count-link" style="cursor:pointer;">%s</a>',
+        htmltools::htmlEscape(txt)
+      )
+    } else {
+      htmltools::htmlEscape(txt)
+    }
+  }, character(1), USE.NAMES = FALSE)
+  unname(vals)
+}
+
 datatable_with_colvis <- function(df, lock = character(0), remember = TRUE, default_visible = names(df)) {
   df <- sanitize_for_dt(df)   # <- central fix
   default_visible <- intersect(default_visible, names(df))
@@ -1730,6 +1749,126 @@ lookup_batter <- lookup_table %>%
 lookup_catcher <- lookup_table %>%
   dplyr::rename(Catcher = PlayerName, CatcherEmail_lookup = Email)
 
+# Optional legacy Players Access csv path (can be set externally)
+if (!exists("PLAYERS_ACCESS_PATH", inherits = TRUE)) {
+  PLAYERS_ACCESS_PATH <- Sys.getenv("PLAYERS_ACCESS_PATH", unset = "")
+}
+
+read_players_access <- function() {
+  path <- get0("PLAYERS_ACCESS_PATH", ifnotfound = "")
+  if (!nzchar(path) || !file.exists(path)) {
+    return(data.frame(email = character(), names = character(), stringsAsFactors = FALSE))
+  }
+  suppressWarnings(
+    readr::read_csv(
+      path,
+      col_types = readr::cols(
+        email = readr::col_character(),
+        names = readr::col_character(),
+        team  = readr::col_character()
+      )
+    )
+  )
+}
+
+read_players_access_compat <- function() {
+  if (exists("lookup_table", inherits = TRUE)) {
+    df <- get("lookup_table")
+    nm  <- names(df)
+    nml <- tolower(nm)
+    email_col <- nm[match(TRUE, nml %in% c("email","email_lookup"), nomatch = 0)]
+    name_col  <- nm[match(TRUE, nml %in% c("playername","pitcher","player","name","fullname"), nomatch = 0)]
+    if (length(email_col) && length(name_col)) {
+      return(df |>
+        dplyr::transmute(
+          email = tolower(trimws(.data[[email_col[1]]])),
+          nm    = as.character(trimws(.data[[name_col[1]]]))
+        ) |>
+        dplyr::filter(nzchar(email), nzchar(nm)) |>
+        dplyr::group_by(email) |>
+        dplyr::summarise(names = paste(unique(nm), collapse = "|"), .groups = "drop"))
+    }
+  }
+
+  if (file.exists("lookup_table.csv")) {
+    suppressWarnings({
+      df <- readr::read_csv("lookup_table.csv", col_types = readr::cols(.default = readr::col_character()))
+    })
+    nm  <- names(df)
+    nml <- tolower(nm)
+    email_col <- nm[nml == "email"]
+    name_col  <- nm[nml %in% c("playername","player","name")]
+    if (length(email_col) && length(name_col)) {
+      return(df |>
+        dplyr::transmute(
+          email = tolower(trimws(.data[[email_col[1]]])),
+          nm    = as.character(trimws(.data[[name_col[1]]]))
+        ) |>
+        dplyr::filter(nzchar(email), nzchar(nm)) |>
+        dplyr::group_by(email) |>
+        dplyr::summarise(names = paste(unique(nm), collapse = "|"), .groups = "drop"))
+    }
+  }
+
+  path <- get0("PLAYERS_ACCESS_PATH", ifnotfound = "")
+  if (nzchar(path) && file.exists(path)) {
+    return(read_players_access())
+  }
+  data.frame(email = character(), names = character(), stringsAsFactors = FALSE)
+}
+
+normalize_name <- function(x) {
+  x <- as.character(x %||% "")
+  x <- trimws(tolower(gsub("[[:space:]]+", " ", x)))
+  has_comma <- !is.na(x) & grepl(",", x, fixed = TRUE)
+  if (any(has_comma)) {
+    conv <- vapply(strsplit(x[has_comma], ","), function(p) {
+      p <- trimws(p)
+      if (length(p) >= 2) paste(paste(p[-1], collapse = " "), p[1]) else p[1]
+    }, character(1))
+    x[has_comma] <- conv
+    x <- trimws(gsub("[[:space:]]+", " ", x))
+  }
+  x
+}
+
+allowed_names_for_user <- function(email, pa_df = read_players_access_compat()) {
+  if (!nzchar(email)) return(character(0))
+  rows <- pa_df[tolower(pa_df$email) == tolower(email), , drop = FALSE]
+  if (!nrow(rows)) return(character(0))
+  raw <- paste(rows$names %||% "", collapse = "|")
+  out <- unlist(strsplit(raw, "\\|"))
+  out <- trimws(out)
+  out <- unique(out[nzchar(out)])
+  out
+}
+
+filter_to_user <- function(df, domain, names_allow) {
+  if (is.null(df) || !is.data.frame(df) || !NROW(df)) return(df)
+  if (is.null(names_allow) || !length(names_allow)) return(df)
+
+  domain_cols <- switch(
+    domain,
+    "Pitching"    = c("Pitcher","Player","Name","FullName"),
+    "Hitting"     = c("Batter","Hitter","Player","Name","FullName"),
+    "Catching"    = c("Catcher","Player","Name","FullName"),
+    "Leaderboard" = c("Pitcher","Batter","Catcher","Player","Name","FullName"),
+    "Comparison"  = c("Pitcher","Batter","Catcher","Player","Name","FullName"),
+    c("Pitcher","Batter","Catcher","Player","Name","FullName")
+  )
+
+  cand <- intersect(domain_cols, names(df))
+  if (!length(cand)) return(df[0, , drop = FALSE])
+
+  needle <- normalize_name(names_allow)
+  keep_any <- rep(FALSE, nrow(df))
+  for (col in cand) {
+    probe <- normalize_name(as.character(df[[col]] %||% ""))
+    keep_any <- keep_any | (probe %in% needle)
+  }
+  df[keep_any, , drop = FALSE]
+}
+
 # Join, coalesce, and retain role-specific email columns for downstream privacy filters
 if (!"BatterEmail" %in% names(pitch_data)) pitch_data$BatterEmail <- NA_character_
 if (!"CatcherEmail" %in% names(pitch_data)) pitch_data$CatcherEmail <- NA_character_
@@ -1781,6 +1920,20 @@ ADMIN_EMAILS <- c(
 )
 
 get_user_email <- function(session = NULL, input = NULL) {
+  if (exists("current_user_email")) {
+    fml <- tryCatch(names(formals(current_user_email)), error = function(e) character())
+    out <- tryCatch({
+      if (length(fml) >= 2) current_user_email(session, input)
+      else if (length(fml) == 1) current_user_email(session)
+      else current_user_email()
+    }, error = function(e) NULL)
+    if (is.character(out) && length(out)) return(out[[1]])
+  }
+  if (exists("user_email")) {
+    out <- tryCatch(user_email(), error = function(e) NULL)
+    if (is.character(out) && length(out)) return(out[[1]])
+  }
+  # Fallback to session-based detection
   if (inherits(session, "ShinySession")) {
     u <- session$user
     if (!is.null(u) && nzchar(u)) return(u)
@@ -1794,17 +1947,26 @@ get_user_email <- function(session = NULL, input = NULL) {
       }
     }
   }
-  NULL
+  ""
 }
 
 user_is_admin <- function(session = NULL, email = NULL, input = NULL) {
-  if (is.null(email) || !nzchar(email)) {
-    email <- get_user_email(session, input)
+  em <- email
+  if (is.null(em) || !nzchar(em)) em <- get_user_email(session, input)
+  if (exists("is_admin")) {
+    fml <- tryCatch(names(formals(is_admin)), error = function(e) character())
+    ok <- tryCatch({
+      if (length(fml) == 0) is_admin()
+      else if (length(fml) >= 1) is_admin(em)
+      else FALSE
+    }, error = function(e) NA)
+    if (isTRUE(ok) || identical(ok, FALSE)) return(ok)
   }
-  if (is.null(email) || !nzchar(email)) return(FALSE)
-  email <- normalize_email(email)[1]
-  if (is.na(email)) return(FALSE)
-  email %in% normalize_email(ADMIN_EMAILS)
+  # Fallback to direct check
+  if (is.null(em) || !nzchar(em)) return(FALSE)
+  em <- normalize_email(em)[1]
+  if (is.na(em)) return(FALSE)
+  em %in% normalize_email(ADMIN_EMAILS)
 }
 
 
@@ -3303,7 +3465,7 @@ mod_hit_server <- function(id, is_active = shiny::reactive(TRUE)) {
       df <- df %>% dplyr::arrange(Date) %>% dplyr::mutate(PitchNumber = dplyr::row_number())
       if (nnz(input$pcMin)) df <- dplyr::filter(df, PitchNumber >= input$pcMin)
       if (nnz(input$pcMax)) df <- dplyr::filter(df, PitchNumber <= input$pcMax)
-      
+
       df2 <- compute_stuff_simple(df, base_type = "Fastball", level = "College") %>% force_pitch_levels()
       if (!("All" %in% pitch_types)) df2 <- dplyr::filter(df2, TaggedPitchType %in% pitch_types)
       df2
@@ -5702,7 +5864,7 @@ mod_leader_ui <- function(id, show_header = FALSE) {
   )
 }
 
-mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
+mod_leader_server_UNUSED <- function(id, is_active = shiny::reactive(TRUE)) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
@@ -5759,26 +5921,6 @@ mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
       out
     }
 
-    filter_to_allowed <- function(df, col, allowed) {
-      if (is.null(allowed)) return(df)
-      if (!length(allowed)) return(df[0, , drop = FALSE])
-      if (!(col %in% names(df))) return(df[0, , drop = FALSE])
-      df[df[[col]] %in% allowed, , drop = FALSE]
-    }
-
-    visible_players <- reactive({
-      if (user_is_admin(session)) {
-        return(list(pitchers = NULL, batters = NULL, catchers = NULL))
-      }
-
-      ue <- get_user_email(session, input)
-      list(
-        pitchers = allowed_players_for(ue, role = "pitcher"),
-        batters  = allowed_players_for(ue, role = "batter"),
-        catchers = allowed_players_for(ue, role = "catcher")
-      )
-    })
-
     # Keep count filter tidy
     observeEvent(input$countFilter, {
       sel <- input$countFilter
@@ -5789,42 +5931,42 @@ mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
       }
     }, ignoreInit = TRUE)
 
-    scoped_pitch_data <- reactive({
-      scope_to_user_data(pitch_data)
-    })
+    scoped_pitch_data <- reactive(pitch_data)
 
-    scoped_pitch_data_pitching <- reactive({
-      scope_to_user_data(pitch_data_pitching)
-    })
+    scoped_pitch_data_pitching <- reactive(pitch_data_pitching)
 
     # ---------- TEAM-SCOPED BASE ----------
     # Returns the base dataset for the selected domain & session type,
     # filtered to LSU-only rows (PitcherTeam for Pitching/Catching; BatterTeam for Hitting).
     team_base <- reactive({
       req(is_active())
-      vp <- visible_players()
-
       base <- switch(
         input$domain,
         "Pitching" = {
           df <- scoped_pitch_data_pitching()
           df <- if (identical(input$sessionType, "All")) df else dplyr::filter(df, SessionType == input$sessionType)
-          filter_to_allowed(df, "Pitcher", vp$pitchers)
+          df
         },
         "Hitting"  = {
           df <- scoped_pitch_data()
           df <- if (identical(input$sessionType, "All")) df else dplyr::filter(df, SessionType == input$sessionType)
-          filter_to_allowed(df, "Batter", vp$batters)
+          df
         },
         "Catching" = {
           df <- scoped_pitch_data()
           df <- if (identical(input$sessionType, "All")) df else dplyr::filter(df, SessionType == input$sessionType)
-          filter_to_allowed(df, "Catcher", vp$catchers)
+          df
         }
       )
 
-      # Allow missing/blank TEAM_CODE → no team scoping
-      tc <- get0("TEAM_CODE", ifnotfound = "")
+      # Add user filtering logic - admins see all data, users see only their own
+      ue <- get_user_email(session, input)
+      if (!user_is_admin(session, ue)) {
+        allowed_names <- allowed_names_for_user(ue)
+        if (!length(allowed_names)) return(base[0, , drop = FALSE])
+        base <- filter_to_user(base, input$domain %||% "Leaderboard", allowed_names)
+      }
+
       if (!is.character(tc) || length(tc) < 1 || !nzchar(tc[1])) return(base)
       
       # Optional: use synonyms if available
@@ -5846,10 +5988,9 @@ mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
     observe({
       req(is_active())
       base <- team_base()
-      first_date <- suppressWarnings(min(base$Date, na.rm = TRUE))
       last_date  <- suppressWarnings(max(base$Date, na.rm = TRUE))
-      if (is.finite(first_date) && is.finite(last_date)) {
-        updateDateRangeInput(session, "dates", start = first_date, end = last_date)
+      if (is.finite(last_date)) {
+        updateDateRangeInput(session, "dates", start = last_date, end = last_date)
       }
     })
     
@@ -14658,6 +14799,542 @@ server <- function(input, output, session) {
   })
   output$calc2_hb_adj <- renderText(hb_adj_text(input$calc2_hand, input$calc2_hb))
 }
+mod_leader_server <- function(id, is_active = shiny::reactive(TRUE)) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    TEAM_CODE_LOCAL <- "HAR_CRI"
+    TEAM_SYNONYMS_LOCAL <- list(HAR_CRI = c("HAR_CRI"))
+
+    nnz <- function(x) !is.null(x) && !is.na(x)
+    safe_div <- function(a, b) {
+      a <- suppressWarnings(as.numeric(a)); b <- suppressWarnings(as.numeric(b))
+      ifelse(is.finite(den <- b) && den != 0 && is.finite(a), a / den, NA_real_)
+    }
+    parse_num <- function(x) {
+      if (is.numeric(x)) return(x)
+      sx <- trimws(as.character(x))
+      sx[sx == ""] <- NA_character_
+      is_pct <- grepl("%", sx)
+      val <- suppressWarnings(as.numeric(gsub("[^0-9eE.+-]", "", sx)))
+      val[is_pct] <- val[is_pct] / 100
+      val
+    }
+    nz_mean <- function(x) {
+      x <- suppressWarnings(as.numeric(x))
+      m <- mean(x, na.rm = TRUE)
+      if (is.finite(m)) m else NA_real_
+    }
+    fmt_rate3 <- function(x) {
+      x <- suppressWarnings(as.numeric(x))
+      s <- ifelse(is.finite(x), sprintf("%.3f", x), "")
+      sub("^0\\.", ".", s)
+    }
+    barrel_share_from_flags <- function(df) {
+      candidates <- c("Barrel", "Barrels", "BarrelFlag", "IsBarrel", "Barreled", "Barrelled")
+      nm <- candidates[candidates %in% names(df)]
+      if (!length(nm)) return(NA_real_)
+      col <- df[[nm[1]]]
+      safe_div(sum(as.logical(col), na.rm = TRUE), sum(!is.na(col)))
+    }
+
+    observeEvent(input$countFilter, {
+      sel <- input$countFilter
+      if (is.null(sel) || !length(sel)) {
+        updateSelectInput(session, "countFilter", selected = "All")
+      } else if ("All" %in% sel && length(sel) > 1) {
+        updateSelectInput(session, "countFilter", selected = setdiff(sel, "All"))
+      }
+    }, ignoreInit = TRUE)
+
+    team_base <- reactive({
+      req(is_active())
+      base <- switch(
+        input$domain,
+        "Pitching" = if (identical(input$sessionType, "All")) pitch_data_pitching else dplyr::filter(pitch_data_pitching, SessionType == input$sessionType),
+        "Hitting"  = if (identical(input$sessionType, "All")) pitch_data else dplyr::filter(pitch_data, SessionType == input$sessionType),
+        "Catching" = if (identical(input$sessionType, "All")) pitch_data else dplyr::filter(pitch_data, SessionType == input$sessionType)
+      )
+
+      tc <- get0("TEAM_CODE", ifnotfound = "")  # Use empty string like TMdata
+      ue <- get_user_email(session, input)
+      is_admin_result <- user_is_admin(session, ue)
+      
+      message("DEBUG: User email: '", ue %||% "NULL", "'")
+      message("DEBUG: Is admin: ", is_admin_result)
+      message("DEBUG: TEAM_CODE: '", tc %||% "NULL", "'")
+      message("DEBUG: Base data rows before filtering: ", nrow(base))
+      
+      # Match TMdata logic: if no TEAM_CODE, skip user filtering for local development
+      if (!is.character(tc) || length(tc) < 1 || !nzchar(tc[1])) {
+        message("DEBUG: No TEAM_CODE - bypassing user filtering (local development mode)")
+        return(base)
+      }
+      
+      if (!is_admin_result) {
+        allowed_names <- allowed_names_for_user(ue)
+        message("DEBUG: Allowed names for user: ", paste(allowed_names, collapse = ", "))
+        if (!length(allowed_names)) {
+          message("DEBUG: No allowed names - returning empty dataset")
+          return(base[0, , drop = FALSE])
+        }
+        base <- filter_to_user(base, input$domain %||% "Leaderboard", allowed_names)
+        message("DEBUG: After user filtering: ", nrow(base), " rows")
+      } else {
+        message("DEBUG: User is admin - skipping user filtering")
+      }
+
+      # If we get here, we have a valid TEAM_CODE, so apply team filtering
+      codes_for <- if (exists("TEAM_SYNONYMS", inherits = TRUE)) {
+        function(code) if (code %in% names(TEAM_SYNONYMS)) TEAM_SYNONYMS[[code]] else code
+      } else {
+        function(code) {
+          if (code %in% names(TEAM_SYNONYMS_LOCAL)) TEAM_SYNONYMS_LOCAL[[code]] else code
+        }
+      }
+
+      team_codes <- codes_for(tc[1])
+      message("DEBUG: Team codes for filtering: ", paste(team_codes, collapse = ", "))
+      
+      result <- if (identical(input$domain, "Hitting")) {
+        dplyr::filter(base, BatterTeam %in% team_codes)
+      } else {
+        dplyr::filter(base, PitcherTeam %in% team_codes)
+      }
+      
+      message("DEBUG: After team filtering: ", nrow(result), " rows")
+      result
+    })
+
+    observe({
+      req(is_active())
+      base <- team_base()
+      last_date <- suppressWarnings(max(base$Date, na.rm = TRUE))
+      if (is.finite(last_date)) {
+        updateDateRangeInput(session, "dates", start = last_date, end = last_date)
+      }
+    })
+
+    filtered_lb <- reactive({
+      req(is_active(), input$dates, input$hand, input$zoneLoc, input$inZone)
+
+      df <- team_base()
+      df <- dplyr::filter(df, Date >= input$dates[1], Date <= input$dates[2])
+      if (input$hand != "All") df <- dplyr::filter(df, PitcherThrows == input$hand)
+
+      if (!is.null(input$batterSide) && input$batterSide != "All") {
+        df <- df %>% dplyr::filter(
+          SessionType != "Live" | (SessionType == "Live" && BatterSide == input$batterSide)
+        )
+      }
+
+      df <- enforce_zone(df, input$zoneLoc)
+      df <- enforce_inzone(df, input$inZone)
+      df <- apply_count_filter(df, input$countFilter)
+
+      if (nnz(input$veloMin)) df <- dplyr::filter(df, RelSpeed >= input$veloMin)
+      if (nnz(input$veloMax)) df <- dplyr::filter(df, RelSpeed <= input$veloMax)
+      if (nnz(input$ivbMin))  df <- dplyr::filter(df, InducedVertBreak >= input$ivbMin)
+      if (nnz(input$ivbMax))  df <- dplyr::filter(df, InducedVertBreak <= input$ivbMax)
+      if (nnz(input$hbMin))   df <- dplyr::filter(df, HorzBreak >= input$hbMin)
+      if (nnz(input$hbMax))   df <- dplyr::filter(df, HorzBreak <= input$hbMax)
+
+      ptypes <- input$pitchType
+      if (is.null(ptypes)) ptypes <- "All"
+      if (!("All" %in% ptypes)) df <- dplyr::filter(df, TaggedPitchType %in% ptypes)
+
+      df <- df %>% dplyr::arrange(Date) %>% dplyr::mutate(PitchNumber = dplyr::row_number())
+      if (nnz(input$pcMin)) df <- dplyr::filter(df, PitchNumber >= input$pcMin)
+      if (nnz(input$pcMax)) df <- dplyr::filter(df, PitchNumber <= input$pcMax)
+
+      compute_stuff_simple(df, base_type = "Fastball", level = "College") %>%
+        force_pitch_levels()
+    })
+
+    output$lbButtons <- renderUI({
+      sel <- isolate(input$lbMode); if (is.null(sel)) sel <- "Stuff"
+      tagList(
+        radioButtons(ns("lbMode"), NULL,
+                     choices = c("Stuff", "Process", "Results", "Custom"),
+                     selected = sel, inline = TRUE),
+        conditionalPanel(
+          sprintf("input['%s']=='Custom'", ns("lbMode")),
+          selectizeInput(ns("lbCustomCols"), NULL,
+                         choices = setdiff(all_table_cols, "Pitch"),
+                         multiple = TRUE,
+                         options = list(placeholder = "Choose columns to show…"))
+        )
+      )
+    })
+
+    output$lbTable <- DT::renderDataTable({
+      df <- filtered_lb()
+      validate(need(NROW(df) > 0, "No data for selected filters"))
+
+      player_col <- switch(input$domain,
+                           "Pitching" = "Pitcher",
+                           "Hitting"  = "Batter",
+                           "Catching" = "Catcher")
+      if (!player_col %in% names(df)) {
+        return(DT::datatable(data.frame(Message = "Player column not found"), options = list(dom = 't')))
+      }
+
+      df <- df %>% dplyr::filter(!is.na(.data[[player_col]]) & nzchar(.data[[player_col]]))
+      by_player <- split(df, df[[player_col]])
+
+      build_all_row <- function(df) {
+        safe_pct <- function(num, den) {
+          num <- suppressWarnings(as.numeric(num)); den <- suppressWarnings(as.numeric(den))
+          ifelse(is.finite(den) && den > 0 && is.finite(num), paste0(round(100 * num / den, 1), "%"), "")
+        }
+        nz_mean_local <- function(x) {
+          x <- suppressWarnings(as.numeric(x))
+          m <- mean(x, na.rm = TRUE)
+          if (is.finite(m)) m else NA_real_
+        }
+
+        scores <- ifelse(
+          df$PlateLocSide >= ZONE_LEFT & df$PlateLocSide <= ZONE_RIGHT &
+            df$PlateLocHeight >= ZONE_BOTTOM & df$PlateLocHeight <= ZONE_TOP, 1.47,
+          ifelse(
+            df$PlateLocSide >= -1.5 & df$PlateLocSide <= 1.5 &
+              df$PlateLocHeight >= (2.65 - 1.5) & df$PlateLocHeight <= (2.65 + 1.5),
+            0.73, 0
+          )
+        )
+        has_pc  <- sum(!is.na(df$PitchCall)) > 0
+        strikes <- sum(df$PitchCall %in% c("StrikeCalled", "StrikeSwinging", "FoulBallNotFieldable", "InPlay", "FoulBallFieldable"), na.rm = TRUE)
+        sw      <- sum(df$PitchCall == "StrikeSwinging", na.rm = TRUE)
+        den     <- sum(df$PitchCall %in% c("StrikeSwinging", "FoulBallNotFieldable", "FoulBallFieldable", "InPlay"), na.rm = TRUE)
+        csw_all <- sum(df$PitchCall %in% c("StrikeCalled", "StrikeSwinging"), na.rm = TRUE)
+
+        bf_live <- sum(df$SessionType == "Live" & df$Balls == 0 & df$Strikes == 0, na.rm = TRUE)
+        k_live  <- sum(df$SessionType == "Live" & df$KorBB == "Strikeout", na.rm = TRUE)
+        bb_live <- sum(df$SessionType == "Live" & df$KorBB == "Walk", na.rm = TRUE)
+        fps_live <- sum(df$SessionType == "Live" & df$Balls == 0 & df$Strikes == 0 &
+                          df$PitchCall %in% c("InPlay", "StrikeSwinging", "StrikeCalled", "FoulBallNotFieldable"), na.rm = TRUE)
+        ea_live  <- sum(df$SessionType == "Live" & (
+          (df$Balls == 0 & df$Strikes == 0 & df$PitchCall == "InPlay") |
+            (df$Balls == 0 & df$Strikes == 1 & df$PitchCall %in% c("InPlay", "StrikeCalled", "StrikeSwinging", "FoulBallNotFieldable", "FoulBallFieldable")) |
+            (df$Balls == 1 & df$Strikes == 0 & df$PitchCall == "InPlay") |
+            (df$Balls == 1 & df$Strikes == 1 & df$PitchCall %in% c("InPlay", "StrikeCalled", "StrikeSwinging", "FoulBallNotFieldable", "FoulBallFieldable"))
+        ), na.rm = TRUE)
+
+        vmax   <- suppressWarnings(max(as.numeric(df$RelSpeed), na.rm = TRUE)); vmax <- if (is.finite(vmax)) round(vmax, 1) else NA_real_
+        ev_all <- nz_mean_local(ifelse(df$SessionType == "Live", df$ExitSpeed, NA_real_))
+        la_all <- nz_mean_local(ifelse(df$SessionType == "Live", df$Angle,     NA_real_))
+        stuff_all <- round(nz_mean_local(df$`Stuff+`), 1)
+        ctrl_all  <- round(nz_mean_local(scores) * 100, 1)
+        qp_all    <- round(nz_mean_local(compute_qp_points(df)) * 200, 1)
+
+        tibble::tibble(
+          `#`         = nrow(df),
+          Usage       = "100%",
+          BF          = bf_live,
+          Velo        = round(nz_mean_local(df$RelSpeed), 1),
+          Max         = vmax,
+          IVB         = round(nz_mean_local(df$InducedVertBreak), 1),
+          HB          = round(nz_mean_local(df$HorzBreak), 1),
+          rTilt       = convert_to_clock(nz_mean_local(df$ReleaseTilt)),
+          bTilt       = convert_to_clock(nz_mean_local(df$BreakTilt)),
+          SpinEff     = { v <- nz_mean_local(df$SpinEfficiency); if (is.na(v)) "" else paste0(round(v * 100, 1), "%") },
+          Spin        = round(nz_mean_local(df$SpinRate), 0),
+          Height      = round(nz_mean_local(df$RelHeight), 1),
+          Side        = round(nz_mean_local(df$RelSide), 1),
+          VAA         = round(nz_mean_local(df$VertApprAngle), 1),
+          HAA         = round(nz_mean_local(df$HorzApprAngle), 1),
+          Ext         = round(nz_mean_local(df$Extension), 1),
+          `InZone%`   = { inzone <- (df$PlateLocSide >= ZONE_LEFT & df$PlateLocSide <= ZONE_RIGHT & df$PlateLocHeight >= ZONE_BOTTOM & df$PlateLocHeight <= ZONE_TOP);
+                           safe_pct(sum(inzone, na.rm = TRUE), sum(!is.na(inzone))) },
+          `Comp%`     = { comp <- (df$PlateLocSide >= -1.5 & df$PlateLocSide <= 1.5 & df$PlateLocHeight >= (2.65 - 1.5) & df$PlateLocHeight <= (2.65 + 1.5));
+                           safe_pct(sum(comp, na.rm = TRUE), sum(!is.na(comp))) },
+          `Strike%`   = if (has_pc) safe_pct(strikes, nrow(df)) else "",
+          `FPS%`      = safe_pct(fps_live, bf_live),
+          `E+A%`      = safe_pct(ea_live, bf_live),
+          `K%`        = safe_pct(k_live, bf_live),
+          `BB%`       = safe_pct(bb_live, bf_live),
+          `Whiff%`    = safe_pct(sw, den),
+          `CSW%`      = if (has_pc) safe_pct(csw_all, nrow(df)) else "",
+          EV          = round(ev_all, 1),
+          LA          = round(la_all, 1),
+          `Stuff+`    = stuff_all,
+          `Ctrl+`     = ctrl_all,
+          `QP+`       = qp_all,
+          `Pitching+` = round((stuff_all + qp_all) / 2, 1)
+        )
+      }
+
+      rows <- lapply(by_player, function(dfi) {
+        base_row <- build_all_row(dfi)
+        extras_all <- compute_process_results(dfi) %>%
+          dplyr::filter(PitchType == "All") %>%
+          dplyr::select(IP, BABIP, `GB%`, `Barrel%`, AVG, SLG, xWOBA, xISO, FIP, WHIP)
+        if (!nrow(extras_all)) {
+          extras_all <- tibble::tibble(
+            IP = NA_real_, BABIP = NA_real_, `GB%` = NA_real_, `Barrel%` = NA_real_,
+            AVG = NA_real_, SLG = NA_real_, xWOBA = NA_real_, xISO = NA_real_, FIP = NA_real_, WHIP = NA_real_
+          )
+        }
+        dplyr::bind_cols(
+          tibble::tibble(Player = as.character(dfi[[player_col]][1])),
+          base_row,
+          extras_all
+        )
+      })
+
+      out_tbl <- dplyr::bind_rows(rows) %>% dplyr::relocate(Player)
+
+      mode   <- input$lbMode
+      custom <- input$lbCustomCols; if (is.null(custom)) custom <- character(0)
+      visible_set <- visible_set_for_lb(mode, custom)
+
+      if ("Pitching+" %in% names(out_tbl)) {
+        suppressWarnings(out_tbl <- out_tbl %>% dplyr::arrange(dplyr::desc(as.numeric(`Pitching+`))))
+      }
+
+      cache_key <- paste0("table_cache_", ns("lbTable"))
+      player_groups <- lapply(by_player, function(dfi) dfi)
+      player_groups[["All"]] <- df
+      session$userData[[cache_key]] <- list(
+        table = out_tbl,
+        groups = player_groups,
+        label_column = "Player",
+        source = df,
+        domain = input$domain
+      )
+
+      disp_tbl <- out_tbl
+      if ("#" %in% names(disp_tbl)) {
+        disp_tbl$`#` <- wrap_pitch_counts(disp_tbl$`#`)
+      }
+
+      datatable_with_colvis(
+        disp_tbl,
+        lock            = "Player",
+        remember        = FALSE,
+        default_visible = intersect(visible_set, names(disp_tbl))
+      )
+    }, server = FALSE)
+
+    output$lbHitButtons <- renderUI({
+      req(input$domain == "Hitting")
+      tagList(
+        radioButtons(
+          ns("lbHitMode"), NULL,
+          choices = c("Results", "Custom"),
+          selected = "Results", inline = TRUE
+        ),
+        conditionalPanel(
+          sprintf("input['%s']==='Custom'", ns("lbHitMode")),
+          selectizeInput(
+            ns("lbHitCustomCols"), NULL,
+            choices = c(
+              "PA", "AB", "AVG", "SLG", "OBP", "OPS",
+              "xWOBA", "xISO", "BABIP", "GB%", "Barrel%",
+              "Swing%", "Whiff%", "K%", "BB%", "EV", "LA"
+            ),
+            selected = c("PA", "AB", "AVG", "SLG", "OBP", "OPS"),
+            multiple = TRUE, options = list(placeholder = "Pick columns…")
+          )
+        )
+      )
+    })
+
+    output$lbHitTable <- DT::renderDataTable({
+      req(input$domain == "Hitting")
+      df <- filtered_lb()
+      if (!nrow(df)) {
+        return(DT::datatable(data.frame(message = "No rows after filters"), rownames = FALSE))
+      }
+
+      df <- df %>% dplyr::filter(!is.na(Batter) & nzchar(Batter))
+      if (!nrow(df)) {
+        return(DT::datatable(data.frame(message = "No batters for current filters"), rownames = FALSE))
+      }
+
+      swing_levels <- c("StrikeSwinging", "FoulBallNotFieldable", "FoulBallFieldable", "InPlay")
+      by_batter <- split(df, df$Batter)
+
+      rows <- lapply(by_batter, function(dfi) {
+        is_term_i <- (
+          (!is.na(dfi$PlayResult) & dfi$PlayResult != "Undefined") |
+            (!is.na(dfi$KorBB) & dfi$KorBB %in% c("Strikeout", "Walk"))
+        )
+        term <- dfi[is_term_i, , drop = FALSE]
+
+        PAt     <- nrow(term)
+        HBP_all <- sum(term$PlayResult == "HitByPitch", na.rm = TRUE)
+        Sac_all <- sum(term$PlayResult == "Sacrifice",  na.rm = TRUE)
+        H1      <- sum(term$PlayResult == "Single",  na.rm = TRUE)
+        H2      <- sum(term$PlayResult == "Double",  na.rm = TRUE)
+        H3      <- sum(term$PlayResult == "Triple",  na.rm = TRUE)
+        HR      <- sum(term$PlayResult == "HomeRun", na.rm = TRUE)
+        H_all   <- H1 + H2 + H3 + HR
+        TB_all  <- 1 * H1 + 2 * H2 + 3 * H3 + 4 * HR
+        Kct_all <- sum(term$KorBB == "Strikeout" |
+                         term$PlayResult %in% c("Strikeout", "StrikeoutSwinging", "StrikeoutLooking"), na.rm = TRUE)
+        BBc_all <- sum(term$KorBB == "Walk" | term$PlayResult == "Walk", na.rm = TRUE)
+        ABt     <- PAt - (BBc_all + HBP_all + Sac_all)
+
+        swings_all <- sum(!is.na(dfi$PitchCall) & dfi$PitchCall %in% swing_levels, na.rm = TRUE)
+        whiffs_all <- sum(dfi$PitchCall == "StrikeSwinging", na.rm = TRUE)
+
+        bbe_i <- dfi %>% dplyr::filter(grepl("live|game|ab", tolower(SessionType)), PitchCall == "InPlay")
+        EV_i <- nz_mean(bbe_i$ExitSpeed)
+        LA_i <- nz_mean(bbe_i$Angle)
+        GB_i <- safe_div(sum(bbe_i$TaggedHitType == "GroundBall", na.rm = TRUE),
+                         sum(!is.na(bbe_i$TaggedHitType), na.rm = TRUE))
+
+        extras_all <- compute_process_results(dfi) %>%
+          dplyr::filter(PitchType == "All") %>%
+          dplyr::mutate(
+            xWOBA     = parse_num(xWOBA),
+            xISO      = parse_num(xISO),
+            BABIP     = parse_num(BABIP),
+            `Barrel%` = parse_num(`Barrel%`)
+          ) %>%
+          dplyr::summarise(
+            xWOBA = nz_mean(xWOBA), xISO = nz_mean(xISO),
+            BABIP = nz_mean(BABIP), BarrelFrac = nz_mean(`Barrel%`)
+          )
+
+        barrel_frac <- extras_all$BarrelFrac[1]
+        if (is.na(barrel_frac)) {
+          barrel_frac <- barrel_share_from_flags(bbe_i)
+        }
+
+        tibble::tibble(
+          Player = as.character(dfi$Batter[1]),
+          PA  = PAt,
+          AB  = ABt,
+          AVG = safe_pct(H_all, ABt),
+          SLG = safe_pct(TB_all, ABt),
+          OBP = safe_pct(H_all + BBc_all + HBP_all, PAt),
+          OPS = NA_real_,
+          xWOBA = extras_all$xWOBA[1],
+          xISO  = extras_all$xISO[1],
+          BABIP = extras_all$BABIP[1],
+          `Swing%` = safe_pct(swings_all, nrow(dfi)),
+          `Whiff%` = safe_pct(whiffs_all, swings_all),
+          `GB%`    = GB_i,
+          `K%`     = safe_pct(Kct_all, PAt),
+          `BB%`    = safe_pct(BBc_all, PAt),
+          `Barrel%` = barrel_frac,
+          EV       = EV_i,
+          LA       = LA_i
+        )
+      })
+
+      out_tbl <- dplyr::bind_rows(rows)
+      out_tbl$OPS <- out_tbl$SLG + out_tbl$OBP
+
+      mode <- input$lbHitMode; if (is.null(mode)) mode <- "Results"
+      custom <- input$lbHitCustomCols; if (is.null(custom)) custom <- character(0)
+      visible_set <- if (identical(mode, "Custom")) custom else c("Player", "PA", "AB", "AVG", "SLG", "OBP", "OPS", "xWOBA", "xISO", "BABIP", "Swing%", "Whiff%", "K%", "BB%", "GB%", "EV", "LA", "Barrel%")
+
+      datatable_with_colvis(
+        out_tbl,
+        lock            = "Player",
+        remember        = FALSE,
+        default_visible = intersect(visible_set, names(out_tbl))
+      )
+    }, server = FALSE)
+
+    output$lbCatchButtons <- renderUI({
+      req(input$domain == "Catching")
+      tagList(
+        radioButtons(
+          ns("lbCatchMode"), NULL,
+          choices = c("Data", "Custom"),
+          selected = "Data", inline = TRUE
+        ),
+        conditionalPanel(
+          sprintf("input['%s']==='Custom'", ns("lbCatchMode")),
+          selectizeInput(
+            ns("lbCatchCustomCols"), NULL,
+            choices = c("#", "Velo", "ExchangeTime", "PopTime", "SL+"),
+            multiple = TRUE, options = list(placeholder = "Pick columns…")
+          )
+        )
+      )
+    })
+
+    output$lbCatchTable <- DT::renderDataTable({
+      req(input$domain == "Catching")
+      df <- filtered_lb()
+      if (!nrow(df)) {
+        return(DT::datatable(data.frame(message = "No rows after filters"), rownames = FALSE))
+      }
+
+      df <- df %>% dplyr::filter(!is.na(Catcher) & nzchar(Catcher))
+      if (!nrow(df)) {
+        return(DT::datatable(data.frame(message = "No catchers for current filters"), rownames = FALSE))
+      }
+
+      by_catcher <- split(df, df$Catcher)
+
+      rows <- lapply(names(by_catcher), function(name) {
+        dfi <- by_catcher[[name]]
+        takes   <- !is.na(dfi$PitchCall) & dfi$PitchCall %in% c("StrikeCalled", "BallCalled")
+        buckets <- inzone_label(dfi$PlateLocSide, dfi$PlateLocHeight)
+
+        base_tbl <- tibble::tibble(
+          take   = takes,
+          bucket = buckets,
+          is_cs  = dfi$PitchCall == "StrikeCalled"
+        ) %>%
+          dplyr::filter(take) %>%
+          dplyr::group_by(bucket) %>%
+          dplyr::summarise(cs_rate = mean(is_cs, na.rm = TRUE), n = dplyr::n(), .groups = "drop")
+
+        overall_rate <- if (nrow(base_tbl) && sum(base_tbl$n) > 0) {
+          sum(base_tbl$cs_rate * base_tbl$n) / sum(base_tbl$n)
+        } else NA_real_
+        rate_for_bucket <- function(b) {
+          r <- base_tbl$cs_rate[match(b, base_tbl$bucket)]
+          ifelse(is.na(r), overall_rate, r)
+        }
+
+        obs_all <- if (any(takes, na.rm = TRUE)) mean(dfi$PitchCall[takes] == "StrikeCalled", na.rm = TRUE) else NA_real_
+        tb      <- table(buckets[takes])
+        exp_all <- if (length(tb)) sum(as.numeric(tb) * vapply(names(tb), rate_for_bucket, numeric(1))) / sum(tb) else NA_real_
+        sl_all  <- if (is.finite(obs_all) && is.finite(exp_all) && exp_all > 0) round(100 * obs_all / exp_all, 1) else NA_real_
+
+        to_num <- function(x) suppressWarnings(as.numeric(x))
+        dft <- dfi %>%
+          dplyr::mutate(
+            ThrowSpeed_num   = to_num(ThrowSpeed),
+            ExchangeTime_num = to_num(ExchangeTime),
+            PopTime_num      = to_num(PopTime)
+          ) %>%
+          dplyr::filter(is.finite(PopTime_num))
+
+        tibble::tibble(
+          Player       = name,
+          `#`          = nrow(dft),
+          Velo         = if (nrow(dft)) round(mean(dft$ThrowSpeed_num, na.rm = TRUE), 1) else NA_real_,
+          ExchangeTime = if (nrow(dft)) round(mean(dft$ExchangeTime_num, na.rm = TRUE), 1) else NA_real_,
+          PopTime      = if (nrow(dft)) round(mean(dft$PopTime_num,      na.rm = TRUE), 2) else NA_real_,
+          `SL+`        = sl_all
+        )
+      })
+
+      out_tbl <- dplyr::bind_rows(rows)
+
+      mode <- input$lbCatchMode; if (is.null(mode)) mode <- "Data"
+      custom <- input$lbCatchCustomCols; if (is.null(custom)) custom <- character(0)
+      visible_set <- if (identical(mode, "Custom")) unique(c("Player", custom)) else c("Player", "#", "Velo", "ExchangeTime", "PopTime", "SL+")
+
+      datatable_with_colvis(
+        out_tbl,
+        lock            = "Player",
+        remember        = FALSE,
+        default_visible = intersect(visible_set, names(out_tbl))
+      )
+    }, server = FALSE)
+  })
+}
+
 # ---------- Run ----------
 if (identical(Sys.getenv("DISABLE_SHINY_AUTORUN"), "1")) {
   message("DISABLE_SHINY_AUTORUN=1 → shinyApp() skipped")
