@@ -7,8 +7,8 @@ suppressPackageStartupMessages({
   library(purrr)
   library(tidyr)
   library(magrittr)
+  library(tibble)
 })
-library(tibble)
 library(DT)
 library(gridExtra)
 library(ggplot2)
@@ -8371,42 +8371,37 @@ ui <- tagList(
 # Server logic
 server <- function(input, output, session) {
   
-  session_label_from <- function(df) {
-  # Reactive value to store modified pitch data with persistent storage
+  # Reactive value to store modified pitch data with edits persisted
   modified_pitch_data <- reactiveVal()
   
-  # Load existing modifications on startup
-  observe({
-    modifications_file <- "pitch_modifications.rds"
-    
-    # Load original data
-    original_data <- pitch_data_pitching
-    
-    # Apply any stored modifications
-    if (file.exists(modifications_file)) {
-      stored_mods <- readRDS(modifications_file)
-      
-      # Apply modifications to original data
-      modified_data <- original_data
-      for (i in 1:nrow(stored_mods)) {
-        mod <- stored_mods[i, ]
-        # Find matching rows using multiple fields for robustness
-        match_idx <- which(
-          modified_data$Pitcher == mod$Pitcher &
-          modified_data$Date == mod$Date &
-          abs(modified_data$RelSpeed - mod$RelSpeed) < 0.1 &
-          abs(modified_data$HorzBreak - mod$HorzBreak) < 0.1 &
-          abs(modified_data$InducedVertBreak - mod$InducedVertBreak) < 0.1
-        )
-        if (length(match_idx) > 0) {
-          modified_data$TaggedPitchType[match_idx[1]] <- mod$new_pitch_type
-        }
+  # Load existing modifications if they exist
+  modifications_file <- "pitch_modifications.rds"
+  if (file.exists(modifications_file)) {
+    stored_mods <- readRDS(modifications_file)
+    temp_data <- pitch_data_pitching %>%
+      mutate(original_row_id = row_number())  # Add unique identifier
+    # Apply stored modifications
+    for (i in seq_len(nrow(stored_mods))) {
+      mod <- stored_mods[i, ]
+      # Find matching rows using multiple fields for robustness
+      match_idx <- which(
+        temp_data$Pitcher == mod$Pitcher &
+        temp_data$Date == mod$Date &
+        abs(temp_data$RelSpeed - (mod$RelSpeed %||% 0)) < 0.1 &
+        abs(temp_data$HorzBreak - (mod$HorzBreak %||% 0)) < 0.1 &
+        abs(temp_data$InducedVertBreak - (mod$InducedVertBreak %||% 0)) < 0.1
+      )
+      if (length(match_idx) > 0) {
+        # If multiple matches, take the first one
+        temp_data$TaggedPitchType[match_idx[1]] <- mod$new_pitch_type
       }
-      modified_pitch_data(modified_data)
-    } else {
-      modified_pitch_data(original_data)
     }
-  })
+    modified_pitch_data(temp_data)
+  } else {
+    modified_pitch_data(pitch_data_pitching %>% mutate(original_row_id = row_number()))
+  }
+
+  session_label_from <- function(df) {
     s <- unique(na.omit(as.character(df$SessionType)))
     if (length(s) == 1) s else "All"
   }
