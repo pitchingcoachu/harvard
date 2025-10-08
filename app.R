@@ -8478,7 +8478,7 @@ ADMIN_EMAILS <- c(
   
   is_admin <- reactive({
     u <- user_email()
-    !is.na(u) && u %in% admin_emails
+    !is.na(u) && u %in% ADMIN_EMAILS
   })
   
   tooltip_css <- "color:#fff !important;font-weight:600;padding:6px;border-radius:8px;text-shadow:0 1px 1px rgba(0,0,0,.4);"
