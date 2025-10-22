@@ -8470,7 +8470,7 @@ ADMIN_EMAILS <- c(
   "nathancole@fas.harvard.edu",
   "jeffrey_kane@fas.harvard.edu",
   "mslattery@fas.harvard.edu",
-  "cleaden24@gmail.com"
+  "cleaden@seas.harvard.edu"
 )
   # helper to normalize email
   norm_email <- function(x) tolower(trimws(x))
