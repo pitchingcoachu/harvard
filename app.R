@@ -8301,6 +8301,9 @@ server <- function(input, output, session) {
   # Reactive value to track modification statistics
   modification_stats <- reactiveVal(list(applied_count = 0, total_modifications = 0))
   
+  # Reactive value to track if user has manually changed the date range
+  user_modified_dates <- reactiveVal(FALSE)
+  
   # Function to load modifications with feedback
   load_modifications <- function(force_reload = FALSE, verbose = TRUE) {
     if (force_reload || check_data_freshness()) {
@@ -8701,8 +8704,11 @@ ADMIN_EMAILS <- c(
     later::later(function() {
       if (nzchar(x$sess))    updateSelectInput(session, "sessionType", selected = x$sess)
       if (nzchar(x$pitcher)) updateSelectInput(session, "pitcher",      selected = x$pitcher)
-      if (nzchar(x$ds) && nzchar(x$de))
+      if (nzchar(x$ds) && nzchar(x$de)) {
         updateDateRangeInput(session, "dates", start = as.Date(x$ds), end = as.Date(x$de))
+        # Mark dates as user-modified since note jump sets specific dates to preserve
+        user_modified_dates(TRUE)
+      }
       # sub-tabs by suite
       if (identical(x$suite, "Pitching")) {
         if (nzchar(x$page)) updateTabsetPanel(session, "tabs", selected = x$page)
@@ -8739,6 +8745,8 @@ ADMIN_EMAILS <- c(
   # Update date only when the *user* changes pitcher (and not during a note jump)
   observeEvent(input$pitcher, {
     if (isTRUE(noteJumping())) return()
+    # Only reset dates if user hasn't manually changed them
+    if (isTRUE(user_modified_dates())) return()
     req(input$pitcher)
     last_date <- if (input$pitcher == "All") {
       max(pitch_data_pitching$Date, na.rm = TRUE)
@@ -8843,6 +8851,8 @@ ADMIN_EMAILS <- c(
   # →  New: whenever the selected pitcher changes, move the dateRange to their last date
   observeEvent(input$pitcher, {
     if (isTRUE(noteJumping())) return()
+    # Only reset dates if user hasn't manually changed them
+    if (isTRUE(user_modified_dates())) return()
     req(input$pitcher)
     last_date <- if (input$pitcher == "All") {
       max(pitch_data_pitching$Date, na.rm = TRUE)
@@ -8851,6 +8861,12 @@ ADMIN_EMAILS <- c(
     }
     updateDateRangeInput(session, "dates", start = last_date, end = last_date)
   })
+  
+  # Track when user manually changes the date range
+  observeEvent(input$dates, {
+    if (isTRUE(noteJumping())) return()  # Don't flag as user change during note jumps
+    user_modified_dates(TRUE)
+  }, ignoreInit = TRUE)
   
   observeEvent(input$countFilter, {
     sel <- input$countFilter
@@ -8978,6 +8994,8 @@ ADMIN_EMAILS <- c(
   
   
   observeEvent(input$sessionType, {
+    # Only reset dates if user hasn't manually changed them
+    if (isTRUE(user_modified_dates())) return()
     df_base <- if (input$sessionType == "All") pitch_data_pitching else
       dplyr::filter(pitch_data_pitching, SessionType == input$sessionType)
     last_date <- if (is.null(input$pitcher) || input$pitcher == "All") {
