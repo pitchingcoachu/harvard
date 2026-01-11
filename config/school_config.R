@@ -95,12 +95,12 @@ school_config <- list(
     "Moseman, Cody"
   ),
   colors = list(
-    primary             = "#0d1224",   # deep navy used in the dark-mode radial gradient (gcu/app.R:17666-17674)
-    accent              = "#667eea",   # start of the active-tab/btn gradient (gcu/app.R:17464-17515)
-    accent_secondary    = "#764ba2",   # end of that same gradient
-    background          = "#f5f7fa",   # light page background (gcu/app.R:17135)
-    background_secondary= "#e8ecf1"   # the matching secondary background tone
-    
+    primary             = "#b8112d",   # Harvard crimson from logo
+    accent              = "#b8112d",   # use crimson as starting gradient color
+    accent_secondary    = "#000000",   # black highlight from logo
+    background          = "#ffffff",   # clean white base matching logo field
+    background_secondary= "#f0f0f0"    # light grey from logo shading
+
   ),
   logo = "Harvardlogo.png",
   coaches_emails = c(
