@@ -97,9 +97,9 @@ school_config <- list(
   colors = list(
     primary             = "#b8112d",   # Harvard crimson from logo
     accent              = "#b8112d",   # use crimson as starting gradient color
-    accent_secondary    = "#000000",   # black highlight from logo
+    accent_secondary    = "#7f101a",   # darker crimson stop for better contrast
     background          = "#ffffff",   # clean white base matching logo field
-    background_secondary= "#ffffff"    # light grey from logo shading
+    background_secondary= "#f0f0f0"    # light grey from logo shading
 
   ),
   logo = "Harvardlogo.png",
