@@ -107,7 +107,7 @@ school_config <- list(
     "nathancole@fas.harvard.edu",
     "jeffrey_kane@fas.harvard.edu",
     "mslattery@fas.harvard.edu",
-    "cleaden@seas.harvard.edu"
+    "flanagan.kyle15@gmail.com"
   ),
   notes_api = list(
     base_url = "https://script.google.com/macros/s/AKfycbyXJWWRgPib1sSgMtuYCjRW6Wa7UCiC2ojABZHbXSkrhQGogOOYNSMWp4vpNwRYJDdqZg/exec",
