@@ -1370,3 +1370,17 @@ practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
 20260211-GrierField-1.csv
 # Auto-pruned non-team data
 20260211-TommyCareyField-1.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+20260212-JackBowlingField-1_unverified.csv
+# Auto-pruned non-team data
+20260212-JimReevesField-1_unverified.csv
+# Auto-pruned non-team data
+20260212-PaulDemieMainieriField-1_unverified.csv
+# Auto-pruned non-team data
+20260212-WilliamCarey-1_unverified.csv
+# Auto-pruned non-team data
+20260212-DicksonStadium-1_unverified.csv
