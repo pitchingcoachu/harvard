@@ -2724,3 +2724,57 @@ practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
 20260215-WarHawkField-1_unverified.csv
 # Auto-pruned non-team data
 20260215-WichitaState-1_unverified.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260214-AndersonUniversity-1.csv
+# Auto-pruned non-team data
+20260214-AndersonUniversity-2.csv
+# Auto-pruned non-team data
+20260215-Baylor-1_unverified.csv
+# Auto-pruned non-team data
+20260215-FedExPark-1_unverified.csv
+# Auto-pruned non-team data
+20260215-GaryHoganField-1_unverified.csv
+# Auto-pruned non-team data
+20260215-HDetterField-1_unverified.csv
+# Auto-pruned non-team data
+20260215-JayceesField-2_unverified.csv
+# Auto-pruned non-team data
+20260215-JCLoveFieldatPatPattersonPark-1_unverified.csv
+# Auto-pruned non-team data
+20260215-JimPatterson-3_unverified.csv
+# Auto-pruned non-team data
+20260215-JLJohnsonStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260215-JoeMillerBallpark-1_unverified.csv
+# Auto-pruned non-team data
+20260215-LamarUniversity-1_unverified.csv
+# Auto-pruned non-team data
+20260215-LouisianaLafayette-1_unverified.csv
+# Auto-pruned non-team data
+20260215-LSU-1_unverified.csv
+# Auto-pruned non-team data
+20260215-MelchingFielda-2_unverified.csv
+# Auto-pruned non-team data
+20260215-OleMiss-1_unverified.csv
+# Auto-pruned non-team data
+20260215-RiceUniversity-1_unverified.csv
+# Auto-pruned non-team data
+20260215-SullivanField-1_unverified.csv
+# Auto-pruned non-team data
+20260215-SwansonStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260215-TerryParkField1-1_unverified.csv
+# Auto-pruned non-team data
+20260215-TexasStateUniversity-1_unverified.csv
+# Auto-pruned non-team data
+20260215-USouthAlabama-2_unverified.csv
+# Auto-pruned non-team data
+20260215-UTRGVStadium-5_unverified.csv
+# Auto-pruned non-team data
+20260215-UTSanAntonio-1_unverified.csv
