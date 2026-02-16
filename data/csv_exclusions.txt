@@ -2844,3 +2844,27 @@ v3_10_28_20250404-OKState-1.csv
 20260215-WarHawkField-2_unverified.csv
 # Auto-pruned non-team data
 20260215-WichitaState-2_unverified.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260215-Arlington-3_unverified.csv
+# Auto-pruned non-team data
+20260215-IrwinField-2_unverified.csv
+# Auto-pruned non-team data
+20260215-Arlington-2_unverified.csv
+# Auto-pruned non-team data
+20260215-BrownStroudField-1_unverified.csv
+# Auto-pruned non-team data
+20260215-EarlEWilsonStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260215-GaryWright-2_unverified.csv
+# Auto-pruned non-team data
+20260215-GoodwinField-1_unverified.csv
+# Auto-pruned non-team data
+20260215-HardtField-3_unverified.csv
+# Auto-pruned non-team data
+20260215-HardtField-5_unverified.csv
