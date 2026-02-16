@@ -5445,15 +5445,28 @@ season_mask <- function(df) {
   is_live & xor(p_mark, b_mark)
 }
 
+normalize_session_filter_value <- function(session_value) {
+  if (is.null(session_value) || !length(session_value)) return("All")
+  sel <- tolower(trimws(as.character(session_value[[1]])))
+  if (!nzchar(sel) || sel == "all") return("All")
+  if (grepl("season", sel)) return("Season")
+  if (grepl("bull|prac", sel)) return("Bullpen")
+  if (grepl("live|game|ab", sel)) return("Live")
+  NA_character_
+}
+
 apply_session_type_filter <- function(df, session_value) {
-  if (is.null(session_value) || !length(session_value)) return(df)
-  sel <- as.character(session_value[[1]])
-  if (!nzchar(sel) || identical(sel, "All")) return(df)
-  if (identical(sel, "Bullpen")) return(dplyr::filter(df, SessionType == "Bullpen"))
+  sel <- normalize_session_filter_value(session_value)
+  if (identical(sel, "All")) return(df)
+  if (is.na(sel)) return(df[0, , drop = FALSE])
+  if (identical(sel, "Bullpen")) {
+    st <- trimws(as.character(df$SessionType))
+    return(df[st == "Bullpen", , drop = FALSE])
+  }
   if (identical(sel, "Season")) return(df[season_mask(df), , drop = FALSE])
   # "Live" value is shown as "Live BP" in UI
   if (identical(sel, "Live")) return(df[live_bp_mask(df), , drop = FALSE])
-  df
+  df[0, , drop = FALSE]
 }
 
 session_type_choices <- function() {
@@ -17314,10 +17327,14 @@ custom_reports_server <- function(id) {
       
       # Handle "All" selection - get all data for that report type
       if (report_type == "Pitching") {
+        # Match Pitching suite behavior by using the same modified dataset pipeline.
+        pitching_source <- tryCatch(modified_pitch_data(), error = function(e) pitch_data_pitching)
+        if (is.null(pitching_source)) pitching_source <- pitch_data_pitching
+
         if ("All" %in% players || identical(players, "All")) {
-          df <- pitch_data_pitching  # All pitchers
+          df <- pitching_source  # All pitchers
         } else {
-          df <- pitch_data_pitching %>% dplyr::filter(Pitcher %in% players)
+          df <- pitching_source %>% dplyr::filter(Pitcher %in% players)
         }
         
         # Apply three-tier filtering for players (admins and coaches see all)
@@ -18960,7 +18977,7 @@ custom_reports_server <- function(id) {
                   velocity_chart = input[[paste0("cell_velocity_chart_", settings_id)]],
                   custom_cols = input[[paste0("cell_table_custom_cols_", settings_id)]]
                 )
-              }) %>% debounce(300)  # Slightly increased for stability
+              })
               
               # Update title display using delayed shinyjs::html
               # In Multi-Player mode, rows 2+ use Row 1's title
@@ -19002,6 +19019,14 @@ custom_reports_server <- function(id) {
               output[[paste0("cell_output_", id)]] <- renderUI({
                 # Get cell data (triggers on chart type/filter/mode changes only)
                 cd <- cell_data()
+                out_id <- paste0("cell_render_", id)
+                df_now <- get_cell_data_wrapper(id)
+                if (!nrow(df_now)) {
+                  output[[out_id]] <- renderUI({
+                    div("No data for selected filters")
+                  })
+                  return(uiOutput(ns(out_id)))
+                }
                 
                 # Render the chart (title is separate, updated via shinyjs)
                 render_cell(id)
