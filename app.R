@@ -21031,7 +21031,7 @@ ui <- tagList(
         max-height: 110px;
       }
       .creport-brand-logo-right {
-        max-height: 56px;
+        max-height: 110px;
       }
       .creport-logo-light {
         display: none;
@@ -21110,7 +21110,7 @@ ui <- tagList(
         max-height: 102px;
       }
       .creport-pdf-clone .creport-brand-logo-right {
-        max-height: 52px;
+        max-height: 102px;
       }
       .creport-pdf-clone .creport-logo-light {
         display: none;
