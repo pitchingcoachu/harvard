@@ -3170,3 +3170,9 @@ practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
 20260216-HDetterField-2_unverified.csv
 # Auto-pruned non-team data
 20260216-NickDenesField-1_unverified.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
