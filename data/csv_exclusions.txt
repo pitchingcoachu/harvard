@@ -5856,3 +5856,49 @@ practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
 20260224-WoffordCollege-1_unverified.csv
 # Auto-pruned non-team data
 20260224-YoungMemorialField-1_unverified.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260224-705-CalBaptistBaseballField-1_unverified.csv
+# Auto-pruned non-team data
+20260224-AlumniField-1_unverified.csv
+# Auto-pruned non-team data
+20260224-HillDensonField-1_unverified.csv
+# Auto-pruned non-team data
+20260224-JCLoveFieldatPatPattersonPark-1_unverified.csv
+# Auto-pruned non-team data
+20260224-MaestriField-2_unverified.csv
+# Auto-pruned non-team data
+20260224-Olsen-1_unverified.csv
+# Auto-pruned non-team data
+20260224-PresleyAskewField-1_unverified.csv
+# Auto-pruned non-team data
+20260224-Texas-1_unverified.csv
+# Auto-pruned non-team data
+20260224-TIGERBALLPARK-1_unverified.csv
+# Auto-pruned non-team data
+20260224-UCLA-1_unverified.csv
+# Auto-pruned non-team data
+20260224-UTArlington-1_unverified.csv
+# Auto-pruned non-team data
+20260224-AnteaterBallpark-2_unverified.csv
+# Auto-pruned non-team data
+20260224-CarsonNewman-1_unverified.csv
+# Auto-pruned non-team data
+20260224-EarlEWilsonStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260224-HardtField-1_unverified.csv
+# Auto-pruned non-team data
+20260224-LoyolaMarymount-1_unverified.csv
+# Auto-pruned non-team data
+20260224-RiceUniversity-1_unverified.csv
+# Auto-pruned non-team data
+20260224-UCSanDiego-1_unverified.csv
+# Auto-pruned non-team data
+20260224-UofMountOlive-1_unverified.csv
+# Auto-pruned non-team data
+20260224-UofWashington-1_unverified.csv
