@@ -8232,3 +8232,27 @@ practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
 20260301-YoungMemorialField-1.csv
 # Auto-pruned non-team data
 20260302-HubHollisField-1_unverified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260227-BobSteinStadium-1.csv
+# Auto-pruned non-team data
+20260227-FriersonField-1.csv
+# Auto-pruned non-team data
+20260227-GaryWright-1.csv
+# Auto-pruned non-team data
+20260228-WeberField-1.csv
+# Auto-pruned non-team data
+20260302-KleinField-1_unverified.csv
+# Auto-pruned non-team data
+20260302-Lipscomb-1_unverified.csv
+# Auto-pruned non-team data
+20260302-LoyolaMarymount-1_unverified.csv
+# Auto-pruned non-team data
+20260302-SeattleUniversity-1_unverified.csv
+# Auto-pruned non-team data
+20260302-UofWashington-1_unverified.csv
+# Auto-pruned non-team data
+20260302-UTArlington-1_unverified.csv
