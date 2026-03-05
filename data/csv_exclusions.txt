@@ -8866,3 +8866,33 @@ practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
 20260304-Vanderbilt-1_unverified.csv
 # Auto-pruned non-team data
 20260304-WarHawkField-1_unverified.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260304-AbileneChristian-1_unverified.csv
+# Auto-pruned non-team data
+20260304-JCLoveFieldatPatPattersonPark-1_unverified.csv
+# Auto-pruned non-team data
+20260304-LamarUniversity-1_unverified.csv
+# Auto-pruned non-team data
+20260304-LouisianaLafayette-1_unverified.csv
+# Auto-pruned non-team data
+20260304-UTRGVStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260303-JackCoombs-1.csv
+# Auto-pruned non-team data
+20260304-AlabamaState-1_unverified.csv
+# Auto-pruned non-team data
+20260304-CalBerkeley-1_unverified.csv
+# Auto-pruned non-team data
+20260304-J.DavidWalkerField-1_unverified.csv
+# Auto-pruned non-team data
+20260304-OleMiss-1_unverified.csv
+# Auto-pruned non-team data
+20260304-TonyGwynnStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260304-UofMountOlive-1_unverified.csv
