@@ -9020,3 +9020,55 @@ practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
 20260305-TedABroerStadium-1_unverified.csv
 # Auto-pruned non-team data
 practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260305-700-HughAdamsPark-1_unverified.csv
+# Auto-pruned non-team data
+20260305-BridgeforthField-1_unverified.csv
+# Auto-pruned non-team data
+20260305-BrighamYoung-1_unverified.csv
+# Auto-pruned non-team data
+20260305-BruceHurst-1_unverified.csv
+# Auto-pruned non-team data
+20260305-Cumberlands-1_unverified.csv
+# Auto-pruned non-team data
+20260305-Cumberlands-2_unverified.csv
+# Auto-pruned non-team data
+20260305-HarlanRogersSportsComplex-2_unverified.csv
+# Auto-pruned non-team data
+20260305-HDetterField-2_unverified.csv
+# Auto-pruned non-team data
+20260305-JohnAltobelliPark-1_unverified.csv
+# Auto-pruned non-team data
+20260305-KansasUniversity-1_unverified.csv
+# Auto-pruned non-team data
+20260305-MarichFieldLaptop-1_unverified.csv
+# Auto-pruned non-team data
+20260305-McDonaldStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260305-MSST-1_unverified.csv
+# Auto-pruned non-team data
+20260305-PaulDemieMainieriField-1_unverified.csv
+# Auto-pruned non-team data
+20260305-RockwellField-1_unverified.csv
+# Auto-pruned non-team data
+20260305-RockwellField-2_unverified.csv
+# Auto-pruned non-team data
+20260305-SouthwesternOregonStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260305-SouthwesternOregonStadium-2_unverified.csv
+# Auto-pruned non-team data
+20260305-TaylorStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260305-TexasStateUniversity-1_unverified.csv
+# Auto-pruned non-team data
+20260305-UofOklahoma-1_unverified.csv
+# Auto-pruned non-team data
+20260305-BrighamYoung-1.csv
+# Auto-pruned non-team data
+20260305-McDonaldStadium-2_unverified.csv
