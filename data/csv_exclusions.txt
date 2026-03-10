@@ -10906,3 +10906,35 @@ practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
 practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
 # Auto-pruned non-team data
 20260309-BenedettiDiamond-1_unverified.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260309-GossStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260309-RockwellField-5_unverified.csv
+# Auto-pruned non-team data
+20260306-JohnnieLemasterField-1.csv
+# Auto-pruned non-team data
+20260307-NickSwisherField-1.csv
+# Auto-pruned non-team data
+20260307-WeberField-2.csv
+# Auto-pruned non-team data
+20260308-Baylor-2.csv
+# Auto-pruned non-team data
+20260309-AmericaFirstBallpark-1.csv
+# Auto-pruned non-team data
+20260309-BaumStadium-1.csv
+# Auto-pruned non-team data
+20260309-BenedettiDiamond-1.csv
+# Auto-pruned non-team data
+20260309-GossStadium-1.csv
+# Auto-pruned non-team data
+20260309-HubHollisField-1.csv
+# Auto-pruned non-team data
+20260309-JimReevesField-1.csv
+# Auto-pruned non-team data
+20260309-UCCUBallpark-1.csv
