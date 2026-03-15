@@ -12586,3 +12586,71 @@ practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
 20260314-WoffordCollege-2_unverified.csv
 # Auto-pruned non-team data
 20260314-YoungMemorialField-1_unverified.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260314-700-HughAdamsPark-2_unverified.csv
+# Auto-pruned non-team data
+20260314-BlairField-1_unverified.csv
+# Auto-pruned non-team data
+20260314-BlairField-1.csv
+# Auto-pruned non-team data
+20260314-BrazellField-2_unverified.csv
+# Auto-pruned non-team data
+20260314-DavenportField-1_unverified.csv
+# Auto-pruned non-team data
+20260314-DicksonStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260314-DicksonStadium-2_unverified.csv
+# Auto-pruned non-team data
+20260314-DSSComplex-3_unverified.csv
+# Auto-pruned non-team data
+20260314-FalconField-1_unverified.csv
+# Auto-pruned non-team data
+20260314-FalconField-3_unverified.csv
+# Auto-pruned non-team data
+20260314-GaryWright-1_unverified.csv
+# Auto-pruned non-team data
+20260314-GaryWright-3_unverified.csv
+# Auto-pruned non-team data
+20260314-HDetterField-2_unverified.csv
+# Auto-pruned non-team data
+20260314-ItchyJonesStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260314-J.DavidWalkerField-1_unverified.csv
+# Auto-pruned non-team data
+20260314-JackBowlingField-1_unverified.csv
+# Auto-pruned non-team data
+20260314-Lipscomb-1_unverified.csv
+# Auto-pruned non-team data
+20260314-McDonaldStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260314-McDonaldStadium-2_unverified.csv
+# Auto-pruned non-team data
+20260314-PhilSwimleyFieldatDobbinsStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260314-PhoenixMunicipal-1_unverified.csv
+# Auto-pruned non-team data
+20260314-PhoenixMunicipal-1.csv
+# Auto-pruned non-team data
+20260314-SouthwesternOregonStadium-1_unverified.csv
+# Auto-pruned non-team data
+20260314-TaylorStadium-1.csv
+# Auto-pruned non-team data
+20260314-TaylorStadium-2.csv
+# Auto-pruned non-team data
+20260314-UofHouston-1.csv
+# Auto-pruned non-team data
+20260314-UofMountOlive-1_unverified.csv
+# Auto-pruned non-team data
+20260314-UofMountOlive-2_unverified.csv
+# Auto-pruned non-team data
+20260314-UofSanDiego-1_unverified.csv
+# Auto-pruned non-team data
+20260314-UofSanDiego-1.csv
+# Auto-pruned non-team data
+20260314-UofWashington-2_unverified.csv
