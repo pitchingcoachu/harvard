@@ -13492,3 +13492,105 @@ practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
 20260316-FalconField-1.csv
 # Auto-pruned non-team data
 20260316-PaulDemieMainieriField-1.csv
+# Auto-pruned non-team data
+practice_2025_01_31_Pitching_2025-01-31T202129_verified.csv
+# Auto-pruned non-team data
+practice_2026_01_24_Pitching_2026-01-24T144330_verified.csv
+# Auto-pruned non-team data
+practice_2026_02_13_Hitting_2026-02-13T184441_verified.csv
+# Auto-pruned non-team data
+20260218-GrandPark5-1.csv
+# Auto-pruned non-team data
+20260224-FriersonField-1.csv
+# Auto-pruned non-team data
+20260224-UofMontevallo-1.csv
+# Auto-pruned non-team data
+20260225-McBean-2.csv
+# Auto-pruned non-team data
+20260227-BiolaUniversity-2.csv
+# Auto-pruned non-team data
+20260228-AshlandUniversity-2.csv
+# Auto-pruned non-team data
+20260228-RodenField-2.csv
+# Auto-pruned non-team data
+20260306-BartonCollege-1.csv
+# Auto-pruned non-team data
+20260307-BartonCollege-2.csv
+# Auto-pruned non-team data
+20260307-BurchellStallard-1.csv
+# Auto-pruned non-team data
+20260307-SusanKSmithBaseballComplex-2.csv
+# Auto-pruned non-team data
+20260310-EarlEWilsonStadium-1.csv
+# Auto-pruned non-team data
+20260310-JimBettieSmith-1.csv
+# Auto-pruned non-team data
+20260310-TaylorStadium-1.csv
+# Auto-pruned non-team data
+20260313-JohnAltobelliPark-1.csv
+# Auto-pruned non-team data
+20260313-TedABroerStadium-1.csv
+# Auto-pruned non-team data
+20260313-WinterholterField-1.csv
+# Auto-pruned non-team data
+20260313-WinterholterField-2.csv
+# Auto-pruned non-team data
+20260314-BowiesBallpark-1.csv
+# Auto-pruned non-team data
+20260314-BowiesBallpark-2.csv
+# Auto-pruned non-team data
+20260314-Cumberlands-1.csv
+# Auto-pruned non-team data
+20260314-HDetterField-1.csv
+# Auto-pruned non-team data
+20260314-HookerField-1.csv
+# Auto-pruned non-team data
+20260314-JackBowlingField-2.csv
+# Auto-pruned non-team data
+20260314-Lipscomb-1.csv
+# Auto-pruned non-team data
+20260314-McDonaldStadium-1.csv
+# Auto-pruned non-team data
+20260314-McGillField-2.csv
+# Auto-pruned non-team data
+20260314-McGillField-3.csv
+# Auto-pruned non-team data
+20260314-PaulDemieMainieriField-1.csv
+# Auto-pruned non-team data
+20260314-SaltLakeCC-1.csv
+# Auto-pruned non-team data
+20260314-SaltLakeCC-2.csv
+# Auto-pruned non-team data
+20260314-SheheeStadium-1.csv
+# Auto-pruned non-team data
+20260314-SouthernIdaho-1.csv
+# Auto-pruned non-team data
+20260314-SouthernIdaho-2.csv
+# Auto-pruned non-team data
+20260314-TedABroerStadium-1.csv
+# Auto-pruned non-team data
+20260314-WeberField-1.csv
+# Auto-pruned non-team data
+20260314-WilliamCarey-1.csv
+# Auto-pruned non-team data
+20260314-WilliamCarey-2.csv
+# Auto-pruned non-team data
+20260314-WinterholterField-1.csv
+# Auto-pruned non-team data
+20260314-WinterholterField-2.csv
+# Auto-pruned non-team data
+20260315-BowiesBallpark-1.csv
+# Auto-pruned non-team data
+20260315-SaltLakeCC-1.csv
+# Auto-pruned non-team data
+20260315-SaltLakeCC-2.csv
+# Auto-pruned non-team data
+20260315-UofSanDiego-1.csv
+# Auto-pruned non-team data
+20260316-FalconField-1_unverified.csv
+# Auto-pruned non-team data
+20260317-700-HughAdamsPark-1_unverified.csv
+# Auto-pruned non-team data
+20260317-GrierField-1_unverified.csv
+# Auto-pruned non-team data
+20260317-TrantField-1_unverified.csv
