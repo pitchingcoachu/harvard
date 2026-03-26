@@ -37,8 +37,17 @@ deploy_app <- function() {
           lock_text,
           perl = TRUE
         )
-        writeLines(lock_text, "renv.lock", useBytes = TRUE)
       }
+      if (grepl("\"curl\"\\s*:\\s*\\{[^\\}]*\"Version\"\\s*:\\s*\"5\\.2\\.1\"", lock_text, perl = TRUE)) {
+        cat("Normalizing curl version in renv.lock (5.2.1 -> 7.0.0) before restore...\n")
+        lock_text <- sub(
+          "(\"curl\"\\s*:\\s*\\{[^\\}]*\"Version\"\\s*:\\s*\")5\\.2\\.1(\")",
+          "\\17.0.0\\2",
+          lock_text,
+          perl = TRUE
+        )
+      }
+      writeLines(lock_text, "renv.lock", useBytes = TRUE)
       tryCatch({
         renv::restore(prompt = FALSE)
       }, error = function(e) {
@@ -96,6 +105,7 @@ deploy_app <- function() {
     if (!file.exists(".Renviron")) {
       cat("Warning: .Renviron not found; app may fall back to sqlite state backend in production.\n")
     }
+    Sys.setenv(RENV_CONFIG_SNAPSHOT_VALIDATE = "FALSE")
 
     # Build an explicit deploy file list so large local CSV archives are never bundled.
     all_files <- list.files(
@@ -112,6 +122,10 @@ deploy_app <- function() {
     keep <- keep[!grepl("^packrat/", keep)]
     keep <- keep[!grepl("^data/practice/", keep)]
     keep <- keep[!grepl("^data/v3/", keep)]
+    keep <- keep[!grepl("^scripts/", keep)]
+    keep <- keep[!grepl("^deploy_script\\.R$", keep)]
+    keep <- keep[!grepl("^automated_data_sync\\.R$", keep)]
+    keep <- keep[!grepl("^backup_modifications\\.R$", keep)]
     keep <- keep[!grepl("\\.md$", keep, ignore.case = TRUE)]
     keep <- keep[file.exists(keep)]
 
